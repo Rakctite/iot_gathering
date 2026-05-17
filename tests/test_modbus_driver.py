@@ -1,0 +1,113 @@
+from industrial_gateway.drivers.modbus import ModbusTcpDriver
+from industrial_gateway.models import DeviceSpec, TagSpec
+
+
+class FakeResponse:
+    def __init__(self, registers=None, bits=None, error=False):
+        self.registers = registers or []
+        self.bits = bits or []
+        self._error = error
+
+    def isError(self):
+        return self._error
+
+
+class FakeModbusClient:
+    def __init__(self):
+        self.calls = []
+
+    def read_holding_registers(self, address, count, slave):
+        self.calls.append(("holding", address, count, slave))
+        registers = {
+            100: 25,
+            101: 0x4148,
+            102: 0,
+            103: 0x0000,
+            104: 0x4142,
+            105: 0x4344,
+        }
+        return FakeResponse(registers=[registers[address + offset] for offset in range(count)])
+
+
+class RangeModbusClient:
+    def __init__(self):
+        self.calls = []
+
+    def read_holding_registers(self, address, count, slave):
+        self.calls.append(("holding", address, count, slave))
+        return FakeResponse(registers=list(range(address, address + count)))
+
+
+def test_modbus_driver_reads_contiguous_register_tags_in_one_block():
+    device = DeviceSpec(
+        id=1,
+        name="line",
+        driver_type="modbus_tcp",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 3},
+    )
+    tags = [
+        TagSpec(name="speed", address=100, function="holding_register", data_type="uint16"),
+        TagSpec(name="pressure", address=101, function="holding_register", data_type="float32"),
+        TagSpec(
+            name="batch_code",
+            address=104,
+            function="holding_register",
+            data_type="string",
+            word_count=2,
+        ),
+    ]
+    driver = ModbusTcpDriver(device, tags)
+    driver.client = FakeModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("holding", 100, 6, 3)]
+    assert [result.value for result in results] == [25, 12.5, "ABCD"]
+
+
+def test_modbus_driver_keeps_separate_blocks_when_addresses_have_gap():
+    device = DeviceSpec(
+        id=1,
+        name="line",
+        driver_type="modbus_tcp",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 3},
+    )
+    tags = [
+        TagSpec(name="first", address=100, function="holding_register", data_type="uint16"),
+        TagSpec(name="second", address=110, function="holding_register", data_type="uint16"),
+    ]
+    driver = ModbusTcpDriver(device, tags)
+    driver.client = FakeModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("holding", 100, 1, 3), ("holding", 110, 1, 3)]
+    assert results[0].quality == "good"
+    assert results[1].quality == "bad"
+
+
+def test_modbus_driver_splits_holding_register_blocks_at_125_registers():
+    device = DeviceSpec(
+        id=1,
+        name="line",
+        driver_type="modbus_tcp",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 3, "max_block_gap": 200},
+    )
+    tags = [
+        TagSpec(name="first", address=0, function="holding_register", data_type="uint16"),
+        TagSpec(name="last_in_first_read", address=124, function="holding_register", data_type="uint16"),
+        TagSpec(name="first_in_second_read", address=125, function="holding_register", data_type="uint16"),
+    ]
+    driver = ModbusTcpDriver(device, tags)
+    driver.client = RangeModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("holding", 0, 125, 3), ("holding", 125, 1, 3)]
+    assert [result.value for result in results] == [0, 124, 125]

@@ -1,0 +1,33 @@
+[project]
+name = "industrial-gateway"
+version = "0.1.0"
+description = "PySide6 Modbus to MQTT industrial gateway"
+requires-python = ">=3.11"
+dependencies = [
+    "PySide6>=6.7",
+    "pymodbus>=3.7",
+    "pyserial>=3.5",
+    "asyncua>=1.1",
+    "paho-mqtt>=2.1",
+    "psycopg[binary]>=3.2",
+    "pyodbc>=5.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+industrial-gateway = "industrial_gateway.app:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
