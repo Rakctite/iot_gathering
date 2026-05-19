@@ -11,6 +11,9 @@ dependencies = [
     "paho-mqtt>=2.1",
     "psycopg[binary]>=3.2",
     "pyodbc>=5.1",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.34",
+    "itsdangerous>=2.2",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +23,7 @@ dev = [
 
 [project.scripts]
 industrial-gateway = "industrial_gateway.app:main"
+industrial-gateway-web = "industrial_gateway.web.app:main"
 
 [build-system]
 requires = ["setuptools>=68"]
