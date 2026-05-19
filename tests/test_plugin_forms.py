@@ -3,6 +3,7 @@ from industrial_gateway.gui.plugin_forms import default_plugin_config, plugin_fi
 
 def test_plugin_forms_include_mqtt_postgresql_and_mssql_fields():
     assert [field.key for field in plugin_fields("mqtt")][:3] == ["host", "port", "base_topic"]
+    assert [field.key for field in plugin_fields("mqtt")][-2:] == ["dynamic_topic_enabled", "mac_address"]
     assert [field.key for field in plugin_fields("postgresql")][:4] == ["host", "port", "database", "username"]
     assert [field.key for field in plugin_fields("mssql")][:4] == ["server", "port", "database", "username"]
 

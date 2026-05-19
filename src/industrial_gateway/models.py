@@ -26,6 +26,7 @@ class DeviceSpec:
     driver_type: str
     enabled: bool
     poll_interval_ms: int
+    device_group: str = ""
     connection: dict[str, Any] = field(default_factory=dict)
 
 
@@ -35,6 +36,7 @@ class TagSpec:
     address: int
     function: TagFunction
     data_type: TagDataType
+    tag_group: str = ""
     id: int | None = None
     device_id: int | None = None
     scale: float = 1.0
@@ -72,9 +74,10 @@ class TagResult:
     quality: Quality
     error: str | None
     timestamp: datetime
+    node_id: str | None = None
 
     def to_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "name": self.name,
             "address": self.address,
             "value": self.value,
@@ -82,6 +85,9 @@ class TagResult:
             "error": self.error,
             "timestamp": _iso(self.timestamp),
         }
+        if self.node_id is not None:
+            payload["node_id"] = self.node_id
+        return payload
 
 
 @dataclass(frozen=True)

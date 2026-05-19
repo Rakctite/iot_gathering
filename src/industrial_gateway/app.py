@@ -4,7 +4,15 @@ import sys
 from pathlib import Path
 
 
+def _preload_opcua_imports() -> None:
+    try:
+        import dateutil.tz  # noqa: F401
+    except ImportError:
+        pass
+
+
 def main() -> int:
+    _preload_opcua_imports()
     try:
         from PySide6.QtWidgets import QApplication
     except ImportError as exc:

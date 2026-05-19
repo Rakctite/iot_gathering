@@ -42,6 +42,12 @@ class OpcUaDriver:
             return [_bad(tag, timestamp, "OPC UA client is not connected") for tag in self.tags]
         return [self._read_tag(tag) for tag in self.tags]
 
+    def read_server_status(self) -> Any:
+        if self.client is None:
+            raise RuntimeError("OPC UA client is not connected")
+        node = self.client.get_node("ns=0;i=2259")
+        return self._run(node.read_value())
+
     def start_subscription(self, emit: Callable[[Any], None]) -> None:
         if self.client is None:
             raise RuntimeError("OPC UA client is not connected")
@@ -53,6 +59,11 @@ class OpcUaDriver:
             self._run(self._subscription.delete())
             self._subscription = None
 
+    def run_subscription_once(self, timeout: float = 0.2) -> None:
+        if self._subscription is None:
+            return
+        self._run(asyncio.sleep(timeout))
+
     def _read_tag(self, tag: TagSpec) -> TagResult:
         timestamp = datetime.now(timezone.utc)
         if not tag.node_id:
@@ -61,7 +72,7 @@ class OpcUaDriver:
             node = self.client.get_node(tag.node_id)
             value = self._run(node.read_value())
             value = _coerce_value(value, tag)
-            return TagResult(tag.name, tag.address, value, "good", None, timestamp)
+            return TagResult(tag.name, tag.address, value, "good", None, timestamp, node_id=tag.node_id)
         except Exception as exc:
             return _bad(tag, timestamp, str(exc))
 
@@ -97,7 +108,7 @@ class _OpcUaDataChangeHandler:
             return
         try:
             coerced = _coerce_value(value, tag)
-            tag_result = TagResult(tag.name, tag.address, coerced, "good", None, timestamp)
+            tag_result = TagResult(tag.name, tag.address, coerced, "good", None, timestamp, node_id=tag.node_id)
         except Exception as exc:
             tag_result = _bad(tag, timestamp, str(exc))
         from industrial_gateway.models import ReadResult
@@ -128,4 +139,4 @@ def _coerce_value(value: Any, tag: TagSpec) -> Any:
 
 
 def _bad(tag: TagSpec, timestamp: datetime, error: str) -> TagResult:
-    return TagResult(tag.name, tag.address, None, "bad", error, timestamp)
+    return TagResult(tag.name, tag.address, None, "bad", error, timestamp, node_id=tag.node_id)

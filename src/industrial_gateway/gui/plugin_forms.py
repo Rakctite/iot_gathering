@@ -25,6 +25,8 @@ _PLUGIN_FIELDS: dict[str, tuple[PluginField, ...]] = {
         PluginField("password", "Password", "password", ""),
         PluginField("client_id", "Client ID", "text", "industrial-gateway"),
         PluginField("qos", "QoS", "int", 0, minimum=0, maximum=2),
+        PluginField("dynamic_topic_enabled", "Request topic by MAC", "bool", False),
+        PluginField("mac_address", "MAC address", "text", ""),
     ),
     "postgresql": (
         PluginField("host", "Host", "text", "localhost"),

@@ -19,6 +19,7 @@ class ConfigStore:
                 """
                 CREATE TABLE IF NOT EXISTS devices (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_group TEXT NOT NULL DEFAULT '',
                     name TEXT NOT NULL,
                     driver_type TEXT NOT NULL,
                     enabled INTEGER NOT NULL,
@@ -28,6 +29,7 @@ class ConfigStore:
                 CREATE TABLE IF NOT EXISTS tags (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     device_id INTEGER NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
+                    tag_group TEXT NOT NULL DEFAULT '',
                     name TEXT NOT NULL,
                     address INTEGER NOT NULL,
                     function TEXT NOT NULL,
@@ -61,6 +63,7 @@ class ConfigStore:
                 );
                 """
             )
+            self._migrate_devices(conn)
             self._migrate_tags(conn)
             self._migrate_sink_config(conn)
 
@@ -71,10 +74,11 @@ class ConfigStore:
                 cursor = conn.execute(
                     """
                     INSERT INTO devices
-                    (name, driver_type, enabled, poll_interval_ms, connection_json)
-                    VALUES (?, ?, ?, ?, ?)
+                    (device_group, name, driver_type, enabled, poll_interval_ms, connection_json)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     """,
                     (
+                        device.device_group,
                         device.name,
                         device.driver_type,
                         int(device.enabled),
@@ -86,10 +90,11 @@ class ConfigStore:
             conn.execute(
                 """
                 UPDATE devices
-                SET name = ?, driver_type = ?, enabled = ?, poll_interval_ms = ?, connection_json = ?
+                SET device_group = ?, name = ?, driver_type = ?, enabled = ?, poll_interval_ms = ?, connection_json = ?
                 WHERE id = ?
                 """,
                 (
+                    device.device_group,
                     device.name,
                     device.driver_type,
                     int(device.enabled),
@@ -104,14 +109,15 @@ class ConfigStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, name, driver_type, enabled, poll_interval_ms, connection_json
+                SELECT id, device_group, name, driver_type, enabled, poll_interval_ms, connection_json
                 FROM devices
-                ORDER BY name
+                ORDER BY device_group, name
                 """
             ).fetchall()
         return [
             DeviceSpec(
                 id=row["id"],
+                device_group=row["device_group"],
                 name=row["name"],
                 driver_type=row["driver_type"],
                 enabled=bool(row["enabled"]),
@@ -129,16 +135,18 @@ class ConfigStore:
         validate_tag(self._driver_type_for_device(tag.device_id), tag)
         if tag.device_id is None:
             raise ValueError("tag device_id is required")
+        self._validate_unique_tag_name(tag)
         with self._connect() as conn:
             if tag.id is None:
                 cursor = conn.execute(
                     """
                     INSERT INTO tags
-                    (device_id, name, address, function, data_type, scale, enabled, word_count, byte_order, word_order, node_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (device_id, tag_group, name, address, function, data_type, scale, enabled, word_count, byte_order, word_order, node_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         tag.device_id,
+                        tag.tag_group,
                         tag.name,
                         tag.address,
                         tag.function,
@@ -155,13 +163,14 @@ class ConfigStore:
             conn.execute(
                 """
                 UPDATE tags
-                SET device_id = ?, name = ?, address = ?, function = ?, data_type = ?, scale = ?, enabled = ?,
+                SET device_id = ?, tag_group = ?, name = ?, address = ?, function = ?, data_type = ?, scale = ?, enabled = ?,
                     word_count = ?, byte_order = ?, word_order = ?
                     , node_id = ?
                 WHERE id = ?
                 """,
                 (
                     tag.device_id,
+                    tag.tag_group,
                     tag.name,
                     tag.address,
                     tag.function,
@@ -182,11 +191,11 @@ class ConfigStore:
             rows = conn.execute(
                 """
                 SELECT id, device_id, name, address, function, data_type, scale, enabled,
-                       word_count, byte_order, word_order
+                       tag_group, word_count, byte_order, word_order
                        , node_id
                 FROM tags
                 WHERE device_id = ?
-                ORDER BY name
+                ORDER BY tag_group, name
                 """,
                 (device_id,),
             ).fetchall()
@@ -194,6 +203,7 @@ class ConfigStore:
             TagSpec(
                 id=row["id"],
                 device_id=row["device_id"],
+                tag_group=row["tag_group"],
                 name=row["name"],
                 address=row["address"],
                 function=row["function"],
@@ -347,6 +357,11 @@ class ConfigStore:
         if device.poll_interval_ms < 100:
             raise ValueError("device poll_interval_ms must be at least 100")
 
+    def _migrate_devices(self, conn: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in conn.execute("PRAGMA table_info(devices)").fetchall()}
+        if "device_group" not in columns:
+            conn.execute("ALTER TABLE devices ADD COLUMN device_group TEXT NOT NULL DEFAULT ''")
+
     def _migrate_tags(self, conn: sqlite3.Connection) -> None:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(tags)").fetchall()}
         if "word_count" not in columns:
@@ -357,6 +372,8 @@ class ConfigStore:
             conn.execute("ALTER TABLE tags ADD COLUMN word_order TEXT NOT NULL DEFAULT 'big'")
         if "node_id" not in columns:
             conn.execute("ALTER TABLE tags ADD COLUMN node_id TEXT")
+        if "tag_group" not in columns:
+            conn.execute("ALTER TABLE tags ADD COLUMN tag_group TEXT NOT NULL DEFAULT ''")
 
     def _migrate_sink_config(self, conn: sqlite3.Connection) -> None:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(sink_config)").fetchall()]
@@ -402,3 +419,20 @@ class ConfigStore:
         if row is None:
             raise ValueError(f"device not found: {device_id}")
         return row["driver_type"]
+
+    def _validate_unique_tag_name(self, tag: TagSpec) -> None:
+        if tag.device_id is None:
+            return
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id FROM tags
+                WHERE device_id = ? AND tag_group = ? AND name = ?
+                  AND (? IS NULL OR id != ?)
+                LIMIT 1
+                """,
+                (tag.device_id, tag.tag_group, tag.name, tag.id, tag.id),
+            ).fetchone()
+        if row is not None:
+            group = tag.tag_group or "default"
+            raise ValueError(f"tag name already exists in group '{group}': {tag.name}")
