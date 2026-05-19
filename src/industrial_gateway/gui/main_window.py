@@ -238,10 +238,13 @@ class MainWindow(QMainWindow):
         self.runtime_running = False
         self.server_statuses: dict[str, dict[str, Any]] = {}
         self.plugin_inputs: dict[str, Any] = {}
+        log_root = Path(store_path).parent / "industrial_gateway_log"
         self.logger = AsyncLogWorker(
             self.log_display_queue,
             debug_enabled=False,
-            log_dir=Path(store_path).parent / "industrial_gateway_log",
+            log_dir=log_root / "runtime",
+            error_log_dir=log_root / "error",
+            audit_log_dir=log_root / "audit",
         )
         self.logger.start()
         self.setWindowTitle("Industrial Gateway")
@@ -884,9 +887,23 @@ class MainWindow(QMainWindow):
             driver.connect()
             QMessageBox.information(self, "Connection test", "Connection succeeded")
         except Exception as exc:
+            self._log(
+                "ERROR",
+                "button",
+                "Test Connection failed",
+                {"device": device.__dict__, "error": str(exc)},
+            )
             QMessageBox.critical(self, "Connection test", str(exc))
         finally:
-            driver.disconnect()
+            try:
+                driver.disconnect()
+            except Exception as exc:
+                self._log(
+                    "ERROR",
+                    "button",
+                    "Test Connection disconnect failed",
+                    {"device": device.__dict__, "error": str(exc)},
+                )
 
     def _start_runtime(self) -> None:
         self._log("INFO", "button", "Start clicked", {})

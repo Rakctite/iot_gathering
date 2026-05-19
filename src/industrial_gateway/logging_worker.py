@@ -14,12 +14,16 @@ class AsyncLogWorker(threading.Thread):
         display_queue: Queue[str],
         debug_enabled: bool = False,
         log_dir: str | Path | None = None,
+        error_log_dir: str | Path | None = None,
+        audit_log_dir: str | Path | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self.input_queue: Queue[dict[str, Any]] = Queue()
         self.display_queue = display_queue
         self.debug_enabled = debug_enabled
         self.log_dir = Path(log_dir) if log_dir is not None else None
+        self.error_log_dir = Path(error_log_dir) if error_log_dir is not None else None
+        self.audit_log_dir = Path(audit_log_dir) if audit_log_dir is not None else None
         self._stop_event = threading.Event()
 
     def set_debug_enabled(self, enabled: bool) -> None:
@@ -57,11 +61,18 @@ class AsyncLogWorker(threading.Thread):
             self.drain_once(timeout=0.2)
 
     def _write_file_log(self, record: dict[str, Any], line: str) -> None:
-        if self.log_dir is None:
+        self._write_daily_log(self.log_dir, "industrial_gateway", record, line)
+        if _is_error_record(record):
+            self._write_daily_log(self.error_log_dir, "industrial_gateway_error", record, line)
+        if _is_audit_record(record):
+            self._write_daily_log(self.audit_log_dir, "industrial_gateway_audit", record, line)
+
+    def _write_daily_log(self, log_dir: Path | None, prefix: str, record: dict[str, Any], line: str) -> None:
+        if log_dir is None:
             return
         try:
-            self.log_dir.mkdir(parents=True, exist_ok=True)
-            path = self.log_dir / f"industrial_gateway_{_log_date(record)}.log"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            path = log_dir / f"{prefix}_{_log_date(record)}.log"
             with path.open("a", encoding="utf-8") as handle:
                 handle.write(f"{line}\n")
         except OSError:
@@ -86,6 +97,14 @@ def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:
 def _log_date(record: dict[str, Any]) -> str:
     timestamp = str(record["timestamp"])
     return timestamp[:10]
+
+
+def _is_error_record(record: dict[str, Any]) -> bool:
+    return str(record["level"]).upper() in {"ERROR", "CRITICAL", "EXCEPTION"}
+
+
+def _is_audit_record(record: dict[str, Any]) -> bool:
+    return str(record["source"]).lower() in {"button", "ui", "config", "settings"}
 
 
 def _now_local() -> datetime:

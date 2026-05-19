@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from queue import Queue
 
 from industrial_gateway.models import DeviceSpec, MqttConfig, ReadResult, TagResult
-from industrial_gateway.workers import DriverPoller, SinkPublisher
+from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, SinkPublisher
 
 
 class FakeDriver:
@@ -45,6 +45,42 @@ class FakeSink:
         self.messages.append(message)
 
 
+class FailingConnectDriver(FakeDriver):
+    def connect(self):
+        raise RuntimeError("connect boom")
+
+
+class FailingHealthDriver(FakeDriver):
+    def read_server_status(self):
+        raise RuntimeError("server down")
+
+
+class FailingSubscriptionDriver:
+    def __init__(self, device, tags):
+        self.device = device
+        self.tags = tags
+        self.stopped = False
+        self.disconnected = False
+
+    def connect(self):
+        pass
+
+    def start_subscription(self, emit):
+        self.emit = emit
+
+    def stop_subscription(self):
+        self.stopped = True
+
+    def disconnect(self):
+        self.disconnected = True
+
+    def run_subscription_once(self, timeout=0.2):
+        raise RuntimeError("subscription boom")
+
+    def read_server_status(self):
+        return {"ok": True}
+
+
 def test_driver_poller_puts_read_result_on_queue():
     outbox = Queue()
     logs = Queue()
@@ -65,6 +101,59 @@ def test_driver_poller_puts_read_result_on_queue():
     assert result.device.name == "meter"
     assert result.tags[0].value == 42
     assert logs.get_nowait()["message"] == "driver read completed"
+
+
+def test_driver_poller_logs_connect_or_read_failure():
+    outbox = Queue()
+    logs = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="meter",
+        driver_type="fake",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    poller = DriverPoller(lambda d, tags: FailingConnectDriver(d, tags), device, [], outbox, log_queue=logs)
+
+    poller.poll_once()
+
+    result = outbox.get_nowait()
+    record = logs.get_nowait()
+    assert result.error == "connect boom"
+    assert record["level"] == "ERROR"
+    assert record["message"] == "driver read failed"
+    assert record["data"]["error"] == "connect boom"
+
+
+def test_driver_poller_logs_server_health_check_failure():
+    outbox = Queue()
+    logs = Queue()
+    status = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="opc",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    poller = DriverPoller(
+        lambda d, tags: FailingHealthDriver(d, tags),
+        device,
+        [],
+        outbox,
+        log_queue=logs,
+        status_outbox=status,
+        health_interval_s=0,
+    )
+
+    poller.poll_once()
+
+    status_item = status.get_nowait()
+    records = [logs.get_nowait(), logs.get_nowait()]
+    assert status_item["status"] == "ERROR"
+    assert any(record["message"] == "server health check failed" for record in records)
 
 
 def test_sink_publisher_converts_results_to_batch_message():
@@ -144,6 +233,69 @@ def test_sink_publisher_emits_tag_update_status():
     assert item["tag"] == "bar"
     assert item["node_id"] == "ns=2;s=PHH01.MC01.bar"
     assert item["mode"] == "Subscription"
+
+
+def test_sink_publisher_logs_bad_tag_result():
+    inbox = Queue()
+    logs = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="fake",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+            tags=[
+                TagResult(
+                    name="bar",
+                    address=2,
+                    value=None,
+                    quality="bad",
+                    error="read timeout",
+                    timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+                )
+            ],
+        )
+    )
+    publisher = SinkPublisher(sink, MqttConfig(base_topic="plant"), inbox, log_queue=logs)
+
+    publisher.publish_once()
+
+    record = logs.get_nowait()
+    assert record["level"] == "ERROR"
+    assert record["message"] == "tag read failed"
+    assert record["data"]["tag"] == "bar"
+    assert record["data"]["error"] == "read timeout"
+
+
+def test_opcua_subscription_worker_logs_runtime_failure():
+    outbox = Queue()
+    logs = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="opc",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"mode": "subscription"},
+    )
+    worker = OpcUaSubscriptionWorker(FailingSubscriptionDriver, device, [], outbox, log_queue=logs)
+
+    worker.run()
+
+    result = outbox.get_nowait()
+    record = logs.get_nowait()
+    assert result.error == "subscription boom"
+    assert record["level"] == "INFO"
+    record = logs.get_nowait()
+    assert record["level"] == "ERROR"
+    assert record["message"] == "opcua subscription failed"
 
 
 def test_sink_publisher_republishes_cached_values_without_new_results():

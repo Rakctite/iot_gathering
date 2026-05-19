@@ -76,7 +76,10 @@ class DriverPoller(threading.Thread):
             self.outbox.put(ReadResult(self.device, timestamp, [], error=str(exc)))
             self._log("ERROR", "driver", "driver read failed", {"device": self.device.name, "error": str(exc)})
         finally:
-            driver.disconnect()
+            try:
+                driver.disconnect()
+            except Exception as exc:
+                self._log("ERROR", "driver", "driver disconnect failed", {"device": self.device.name, "error": str(exc)})
 
     def run(self) -> None:
         while not self._stop_event.is_set():
@@ -103,6 +106,12 @@ class DriverPoller(threading.Thread):
             self.status_outbox.put(_server_status(self.device, "OK", None))
         except Exception as exc:
             self.status_outbox.put(_server_status(self.device, "ERROR", str(exc)))
+            self._log(
+                "ERROR",
+                "driver",
+                "server health check failed",
+                {"device": self.device.name, "error": str(exc)},
+            )
 
 
 class SubscriptionDriver(Protocol):
@@ -158,12 +167,46 @@ class OpcUaSubscriptionWorker(threading.Thread):
         try:
             self.start_once()
             while not self._stop_event.is_set():
-                self.driver.run_subscription_once(0.2)
-                self._check_server_status()
+                try:
+                    self.driver.run_subscription_once(0.2)
+                    self._check_server_status()
+                except Exception as exc:
+                    self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
+                    self._log(
+                        "ERROR",
+                        "driver",
+                        "opcua subscription failed",
+                        {"device": self.device.name, "error": str(exc)},
+                    )
+                    self._stop_event.set()
+        except Exception as exc:
+            self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
+            self._log(
+                "ERROR",
+                "driver",
+                "opcua subscription start failed",
+                {"device": self.device.name, "error": str(exc)},
+            )
         finally:
             if self.driver is not None:
-                self.driver.stop_subscription()
-                self.driver.disconnect()
+                try:
+                    self.driver.stop_subscription()
+                except Exception as exc:
+                    self._log(
+                        "ERROR",
+                        "driver",
+                        "opcua subscription stop failed",
+                        {"device": self.device.name, "error": str(exc)},
+                    )
+                try:
+                    self.driver.disconnect()
+                except Exception as exc:
+                    self._log(
+                        "ERROR",
+                        "driver",
+                        "opcua subscription disconnect failed",
+                        {"device": self.device.name, "error": str(exc)},
+                    )
 
     def _emit_result(self, result: ReadResult) -> None:
         self.outbox.put(result)
@@ -194,6 +237,12 @@ class OpcUaSubscriptionWorker(threading.Thread):
             self.status_outbox.put(_server_status(self.device, "OK", None))
         except Exception as exc:
             self.status_outbox.put(_server_status(self.device, "ERROR", str(exc)))
+            self._log(
+                "ERROR",
+                "driver",
+                "server health check failed",
+                {"device": self.device.name, "error": str(exc)},
+            )
 
 
 class SinkPublisher(threading.Thread):
@@ -269,6 +318,19 @@ class SinkPublisher(threading.Thread):
         snapshot["device"] = result.device
         for tag in result.tags:
             snapshot["tags"][_tag_key(tag)] = tag
+            if tag.quality == "bad" or tag.error:
+                self._log(
+                    "ERROR",
+                    "driver",
+                    "tag read failed",
+                    {
+                        "device": result.device.name,
+                        "tag": tag.name,
+                        "node_id": tag.node_id or "",
+                        "quality": tag.quality,
+                        "error": tag.error,
+                    },
+                )
             self._status(
                 {
                     "type": "tag_update",
@@ -290,7 +352,12 @@ class SinkPublisher(threading.Thread):
             self._log("ERROR", "sink", "sink publish failed", {"device": device.name, "error": str(exc)})
 
     def run(self) -> None:
-        self.sink.start()
+        try:
+            self.sink.start()
+        except Exception as exc:
+            self._status(f"sink start failed: {exc}")
+            self._log("ERROR", "sink", "sink start failed", {"error": str(exc)})
+            return
         next_publish = time.monotonic() + self.publish_interval_s
         try:
             while not self._stop_event.is_set():
@@ -302,7 +369,10 @@ class SinkPublisher(threading.Thread):
                     while next_publish <= now:
                         next_publish += self.publish_interval_s
         finally:
-            self.sink.stop()
+            try:
+                self.sink.stop()
+            except Exception as exc:
+                self._log("ERROR", "sink", "sink stop failed", {"error": str(exc)})
 
     def _status(self, message: Any) -> None:
         if self.status_outbox is not None:
