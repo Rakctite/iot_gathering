@@ -6,7 +6,8 @@ from pathlib import Path
 from collections.abc import AsyncIterator
 
 from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from industrial_gateway.services.config_service import ConfigService
 from industrial_gateway.services.runtime_manager import RuntimeManager
@@ -163,5 +164,12 @@ def create_app(
                     continue
         except WebSocketDisconnect:
             return
+
+    static_dir = Path(__file__).parent / "static"
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    @app.get("/")
+    def index():
+        return FileResponse(static_dir / "index.html")
 
     return app

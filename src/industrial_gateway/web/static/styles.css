@@ -1,0 +1,27 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Segoe UI, Arial, sans-serif; color: #172026; background: #f4f6f8; }
+button, input, select { font: inherit; }
+button { border: 1px solid #8a99a8; background: #ffffff; padding: 7px 10px; cursor: pointer; }
+button.active, button:hover { background: #e7eef5; }
+.hidden { display: none !important; }
+.app { min-height: 100vh; }
+.login { width: min(360px, calc(100vw - 32px)); margin: 12vh auto; background: #fff; border: 1px solid #d8dee6; padding: 24px; }
+.login form, .panel, #tagForm { display: grid; gap: 10px; }
+label { display: grid; gap: 4px; color: #33414f; }
+input, select { width: 100%; border: 1px solid #b8c2cc; padding: 7px 8px; background: #fff; }
+.error { color: #b42318; min-height: 20px; }
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #1f2a33; color: #fff; }
+.topbar h1 { font-size: 18px; margin: 0; }
+.status { display: flex; align-items: center; gap: 12px; }
+.tabs { display: flex; gap: 4px; padding: 8px 18px; background: #dfe5eb; }
+.tab-panel { padding: 16px 18px; }
+.split { display: grid; grid-template-columns: 260px minmax(280px, 420px) 1fr; gap: 16px; align-items: start; }
+.panel { background: #fff; border: 1px solid #d8dee6; padding: 14px; }
+.list { list-style: none; padding: 0; margin: 0 0 10px; background: #fff; border: 1px solid #d8dee6; min-height: 320px; }
+.list li { padding: 8px 10px; border-bottom: 1px solid #edf0f3; cursor: pointer; }
+.list li.active { background: #dcebf8; }
+.runtime-actions { display: flex; gap: 10px; align-items: end; margin-bottom: 16px; }
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #d8dee6; }
+th, td { padding: 7px 8px; border-bottom: 1px solid #edf0f3; text-align: left; }
+pre { min-height: 180px; max-height: 280px; overflow: auto; background: #111820; color: #d7e2ec; padding: 12px; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } .runtime-actions { flex-wrap: wrap; } }

@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Industrial Gateway</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section id="loginView" class="login">
+        <h1>Industrial Gateway</h1>
+        <form id="loginForm">
+          <label>Username <input id="username" autocomplete="username" value="admin"></label>
+          <label>Password <input id="password" type="password" autocomplete="current-password"></label>
+          <button type="submit">Log in</button>
+          <p id="loginError" class="error"></p>
+        </form>
+      </section>
+
+      <section id="consoleView" class="console hidden">
+        <header class="topbar">
+          <h1>Industrial Gateway</h1>
+          <div class="status"><span id="runtimeBadge">Stopped</span><button id="logoutButton">Log out</button></div>
+        </header>
+        <nav class="tabs">
+          <button data-tab="devices" class="active">Devices</button>
+          <button data-tab="plugins">Plugins</button>
+          <button data-tab="runtime">Runtime</button>
+        </nav>
+        <section id="devicesTab" class="tab-panel">
+          <div class="split">
+            <div><h2>Devices</h2><ul id="deviceList" class="list"></ul><button id="newDevice">New device</button></div>
+            <form id="deviceForm" class="panel"></form>
+            <div class="panel">
+              <form id="tagForm"></form>
+              <h2>Tags</h2>
+              <table><thead><tr><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
+            </div>
+          </div>
+        </section>
+        <section id="pluginsTab" class="tab-panel hidden">
+          <h2>Output Plugin</h2>
+          <form id="pluginForm" class="panel"></form>
+        </section>
+        <section id="runtimeTab" class="tab-panel hidden">
+          <div class="runtime-actions">
+            <button id="startRuntime">Start</button>
+            <button id="stopRuntime">Stop</button>
+            <label>Health interval <input id="healthInterval" type="number" min="1" value="10"></label>
+          </div>
+          <h2>Runtime Tags</h2>
+          <table><thead><tr><th>Device</th><th>Tag</th><th>Mode</th><th>Updated</th><th>Status</th></tr></thead><tbody id="runtimeTags"></tbody></table>
+          <h2>Logs</h2>
+          <pre id="logs"></pre>
+        </section>
+      </section>
+    </main>
+    <script src="/static/app.js"></script>
+  </body>
+</html>
