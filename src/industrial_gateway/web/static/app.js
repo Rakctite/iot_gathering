@@ -1,4 +1,11 @@
-const state = { devices: [], selectedDevice: null, ws: null };
+const state = {
+  devices: [],
+  selectedDevice: null,
+  driverSchema: {},
+  pluginSchema: {},
+  selectedPlugin: "mqtt",
+  ws: null
+};
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -17,6 +24,42 @@ function escapeHtml(value) {
 function showConsole(show) {
   document.getElementById("loginView").classList.toggle("hidden", show);
   document.getElementById("consoleView").classList.toggle("hidden", !show);
+}
+
+function valueForField(field, values = {}) {
+  return values[field.key] ?? field.default ?? "";
+}
+
+function renderField(field, values = {}, prefix = "") {
+  const name = `${prefix}${field.key}`;
+  const value = valueForField(field, values);
+  if (field.kind === "choice") {
+    const options = (field.choices || []).map(choice =>
+      `<option value="${escapeHtml(choice)}" ${choice === value ? "selected" : ""}>${escapeHtml(choice)}</option>`
+    ).join("");
+    return `<label>${escapeHtml(field.label)} <select name="${escapeHtml(name)}">${options}</select></label>`;
+  }
+  if (field.kind === "bool") {
+    return `<label class="checkbox-row"><input name="${escapeHtml(name)}" type="checkbox" ${value ? "checked" : ""}> ${escapeHtml(field.label)}</label>`;
+  }
+  const type = field.kind === "int" || field.kind === "float" ? "number" : field.kind === "password" ? "password" : "text";
+  const step = field.kind === "float" ? ` step="any"` : "";
+  const min = field.minimum !== null && field.minimum !== undefined ? ` min="${field.minimum}"` : "";
+  const max = field.maximum !== null && field.maximum !== undefined ? ` max="${field.maximum}"` : "";
+  return `<label>${escapeHtml(field.label)} <input name="${escapeHtml(name)}" type="${type}" value="${escapeHtml(value)}"${step}${min}${max}></label>`;
+}
+
+function readFieldValue(form, field, prefix = "") {
+  const control = form.elements[`${prefix}${field.key}`];
+  if (!control) return field.default;
+  if (field.kind === "bool") return control.checked;
+  if (field.kind === "int") return Number.parseInt(control.value || field.default || 0, 10);
+  if (field.kind === "float") return Number.parseFloat(control.value || field.default || 0);
+  return control.value;
+}
+
+function readFields(form, fields, prefix = "") {
+  return Object.fromEntries(fields.map(field => [field.key, readFieldValue(form, field, prefix)]));
 }
 
 async function login(event) {
@@ -38,6 +81,8 @@ async function login(event) {
 }
 
 async function loadAll() {
+  state.driverSchema = await api("/api/schema/drivers");
+  state.pluginSchema = await api("/api/schema/plugins");
   state.devices = await api("/api/devices");
   state.selectedDevice = state.devices[0] || null;
   renderDevices();
@@ -69,17 +114,25 @@ function renderDeviceForm(device) {
   state.selectedDevice = device;
   const form = document.getElementById("deviceForm");
   const data = device || { name: "", device_group: "", driver_type: "modbus_tcp", enabled: true, poll_interval_ms: 1000, connection: {} };
+  const driverTypes = Object.keys(state.driverSchema);
+  const driverOptions = driverTypes.map(driver =>
+    `<option value="${escapeHtml(driver)}" ${driver === data.driver_type ? "selected" : ""}>${escapeHtml(driver)}</option>`
+  ).join("");
+  const fields = state.driverSchema[data.driver_type]?.connection_fields || [];
   form.innerHTML = `
     <h2>Device</h2>
     <label>Group <input name="device_group" value="${escapeHtml(data.device_group || "")}"></label>
     <label>Name <input name="name" value="${escapeHtml(data.name || "")}" required></label>
-    <label>Driver <select name="driver_type"><option>modbus_tcp</option><option>modbus_serial</option><option>opcua</option></select></label>
-    <label>Enabled <input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}></label>
+    <label>Driver <select name="driver_type">${driverOptions}</select></label>
+    <label class="checkbox-row"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}> Enabled</label>
     <label>Poll ms <input name="poll_interval_ms" type="number" min="100" value="${data.poll_interval_ms || 1000}"></label>
-    <label>Connection JSON <input name="connection" value='${escapeHtml(JSON.stringify(data.connection || {}))}'></label>
+    <div id="connectionFields">${fields.map(field => renderField(field, data.connection, "connection_")).join("")}</div>
     <button type="submit">Save device</button>
   `;
-  form.elements.driver_type.value = data.driver_type || "modbus_tcp";
+  form.elements.driver_type.onchange = () => {
+    const next = { ...data, driver_type: form.elements.driver_type.value, connection: {} };
+    renderDeviceForm(next);
+  };
   form.onsubmit = saveDevice;
   renderTagForm();
 }
@@ -87,13 +140,15 @@ function renderDeviceForm(device) {
 async function saveDevice(event) {
   event.preventDefault();
   const form = event.currentTarget;
+  const driverType = form.elements.driver_type.value;
+  const connectionFields = state.driverSchema[driverType]?.connection_fields || [];
   const payload = {
     device_group: form.elements.device_group.value,
     name: form.elements.name.value,
-    driver_type: form.elements.driver_type.value,
+    driver_type: driverType,
     enabled: form.elements.enabled.checked,
     poll_interval_ms: Number(form.elements.poll_interval_ms.value),
-    connection: JSON.parse(form.elements.connection.value || "{}")
+    connection: readFields(form, connectionFields, "connection_")
   };
   if (state.selectedDevice && state.selectedDevice.id) {
     await api(`/api/devices/${state.selectedDevice.id}`, { method: "PUT", body: JSON.stringify(payload) });
@@ -107,14 +162,18 @@ async function saveDevice(event) {
 
 function renderTagForm() {
   const form = document.getElementById("tagForm");
+  const driverType = state.selectedDevice?.driver_type || "modbus_tcp";
+  const schema = state.driverSchema[driverType] || { tag_functions: [], tag_types: [] };
+  const functionOptions = schema.tag_functions.map(item => `<option>${escapeHtml(item)}</option>`).join("");
+  const typeOptions = schema.tag_types.map(item => `<option>${escapeHtml(item)}</option>`).join("");
   form.innerHTML = `
     <h2>New Tag</h2>
     <label>Name <input name="name" required></label>
     <label>NodeId <input name="node_id"></label>
     <label>Address <input name="address" type="number" value="0"></label>
-    <label>Function <select name="function"><option>holding_register</option><option>input_register</option><option>coil</option><option>discrete_input</option><option>opcua_node</option></select></label>
-    <label>Data type <select name="data_type"><option>auto</option><option>bool</option><option>int16</option><option>uint16</option><option>int32</option><option>uint32</option><option>float32</option><option>float64</option><option>string</option></select></label>
-    <label>Scale <input name="scale" type="number" value="1"></label>
+    <label>Function <select name="function">${functionOptions}</select></label>
+    <label>Data type <select name="data_type">${typeOptions}</select></label>
+    <label>Scale <input name="scale" type="number" step="any" value="1"></label>
     <button type="submit">Add tag</button>
   `;
   form.onsubmit = saveTag;
@@ -151,18 +210,27 @@ async function saveTag(event) {
 }
 
 async function loadPlugin() {
-  const plugin = await api("/api/plugins/mqtt");
+  const plugin = await api(`/api/plugins/${state.selectedPlugin}`);
   const form = document.getElementById("pluginForm");
+  const pluginOptions = Object.keys(state.pluginSchema).map(pluginType =>
+    `<option value="${escapeHtml(pluginType)}" ${pluginType === state.selectedPlugin ? "selected" : ""}>${escapeHtml(pluginType)}</option>`
+  ).join("");
+  const fields = state.pluginSchema[state.selectedPlugin]?.fields || [];
   form.innerHTML = `
-    <label>Enabled <input name="enabled" type="checkbox" ${plugin.enabled ? "checked" : ""}></label>
-    <label>Config JSON <input name="config" value='${escapeHtml(JSON.stringify(plugin.config))}'></label>
+    <label>Plugin <select name="sink_type">${pluginOptions}</select></label>
+    <label class="checkbox-row"><input name="enabled" type="checkbox" ${plugin.enabled ? "checked" : ""}> Enabled</label>
+    <div id="pluginFields">${fields.map(field => renderField(field, plugin.config, "plugin_")).join("")}</div>
     <button type="submit">Save plugin</button>
   `;
+  form.elements.sink_type.onchange = async () => {
+    state.selectedPlugin = form.elements.sink_type.value;
+    await loadPlugin();
+  };
   form.onsubmit = async event => {
     event.preventDefault();
-    await api("/api/plugins/mqtt", {
+    await api(`/api/plugins/${state.selectedPlugin}`, {
       method: "PUT",
-      body: JSON.stringify({ enabled: form.elements.enabled.checked, config: JSON.parse(form.elements.config.value || "{}") })
+      body: JSON.stringify({ enabled: form.elements.enabled.checked, config: readFields(form, fields, "plugin_") })
     });
   };
 }

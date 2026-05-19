@@ -57,6 +57,20 @@ def test_device_tag_plugin_api_round_trip(tmp_path):
     assert client.get("/api/plugins/mqtt").json()["config"]["host"] == "broker"
 
 
+def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
+    client = make_client(tmp_path)
+
+    drivers = client.get("/api/schema/drivers")
+    plugins = client.get("/api/schema/plugins")
+
+    assert drivers.status_code == 200
+    assert drivers.json()["modbus_tcp"]["connection_fields"][0]["key"] == "host"
+    assert drivers.json()["opcua"]["tag_functions"] == ["opcua_node"]
+    assert plugins.status_code == 200
+    assert plugins.json()["mqtt"]["fields"][0]["key"] == "host"
+    assert plugins.json()["mssql"]["fields"][-1]["key"] == "trust_server_certificate"
+
+
 def test_runtime_status_endpoint_is_protected(tmp_path):
     app = create_app(
         tmp_path / "gateway.sqlite3",

@@ -9,6 +9,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, WebSocket
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from industrial_gateway.config_schema import driver_schema, plugin_schema
 from industrial_gateway.services.config_service import ConfigService
 from industrial_gateway.services.runtime_manager import RuntimeManager
 from industrial_gateway.store import ConfigStore
@@ -83,6 +84,14 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/schema/drivers")
+    def get_driver_schema(_user: dict[str, str] = Depends(session_dependency)):
+        return driver_schema()
+
+    @app.get("/api/schema/plugins")
+    def get_plugin_schema(_user: dict[str, str] = Depends(session_dependency)):
+        return plugin_schema()
 
     @app.get("/api/devices")
     def list_devices(_user: dict[str, str] = Depends(session_dependency)):

@@ -136,3 +136,46 @@ def normalize_plugin_config(plugin_type: str, existing: dict[str, Any] | None) -
             if field.key in existing:
                 values[field.key] = existing[field.key]
     return values
+
+
+def driver_schema() -> dict[str, dict[str, Any]]:
+    return {
+        driver_type: {
+            "connection_fields": [_connection_field_to_dict(field) for field in fields],
+            "tag_functions": tag_function_choices_for_driver(driver_type),
+            "tag_types": tag_type_choices_for_driver(driver_type),
+        }
+        for driver_type, fields in _CONNECTION_FIELDS.items()
+    }
+
+
+def plugin_schema() -> dict[str, dict[str, Any]]:
+    return {
+        plugin_type: {
+            "fields": [_plugin_field_to_dict(field) for field in fields],
+        }
+        for plugin_type, fields in _PLUGIN_FIELDS.items()
+    }
+
+
+def _connection_field_to_dict(field: ConnectionField) -> dict[str, Any]:
+    return {
+        "key": field.key,
+        "label": field.label,
+        "kind": field.kind,
+        "default": field.default,
+        "choices": list(field.choices),
+        "minimum": field.minimum,
+        "maximum": field.maximum,
+    }
+
+
+def _plugin_field_to_dict(field: PluginField) -> dict[str, Any]:
+    return {
+        "key": field.key,
+        "label": field.label,
+        "kind": field.kind,
+        "default": field.default,
+        "minimum": field.minimum,
+        "maximum": field.maximum,
+    }
