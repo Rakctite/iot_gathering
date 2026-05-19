@@ -43,6 +43,18 @@ python -m pip install -e ".[dev]"
 industrial-gateway
 ```
 
+## Run Web Service
+
+```powershell
+$env:INDUSTRIAL_GATEWAY_ADMIN_USER="admin"
+$env:INDUSTRIAL_GATEWAY_ADMIN_PASSWORD="change-me"
+$env:INDUSTRIAL_GATEWAY_SESSION_SECRET="replace-with-random-secret"
+industrial-gateway-web
+```
+
+The web service listens on `0.0.0.0:50137` by default. Use LAN or VPN access for
+the first release. Do not expose this port directly to the public internet.
+
 The app stores its SQLite configuration at:
 
 ```text
