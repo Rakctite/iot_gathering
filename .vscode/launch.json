@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Industrial Gateway Web",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "industrial_gateway.web.app",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "INDUSTRIAL_GATEWAY_ADMIN_USER": "admin",
+        "INDUSTRIAL_GATEWAY_ADMIN_PASSWORD": "password",
+        "INDUSTRIAL_GATEWAY_SESSION_SECRET": "local-dev-secret"
+      }
+    }
+  ]
+}

@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from industrial_gateway.gui.connection_forms import normalize_connection_for_driver
-from industrial_gateway.gui.plugin_forms import normalize_plugin_config
+from industrial_gateway.config_schema import normalize_connection_for_driver, normalize_plugin_config
 from industrial_gateway.models import DeviceSpec, SinkConfig, TagSpec
 from industrial_gateway.store import ConfigStore
 

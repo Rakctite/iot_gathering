@@ -1,4 +1,4 @@
-from industrial_gateway.gui.connection_forms import (
+from industrial_gateway.config_schema import (
     connection_fields_for_driver,
     default_connection_for_driver,
     normalize_connection_for_driver,

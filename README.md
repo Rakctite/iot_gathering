@@ -1,7 +1,8 @@
 # Industrial Gateway
 
-PySide6 based v1 gateway for reading industrial devices over Modbus TCP or
-Modbus Serial and publishing device-level batch JSON messages to MQTT.
+Web-based gateway for reading industrial devices over Modbus TCP, Modbus
+Serial, or OPC UA and publishing device-level batch JSON messages to MQTT or
+database sinks.
 
 ## What v1 Includes
 
@@ -11,8 +12,7 @@ Modbus Serial and publishing device-level batch JSON messages to MQTT.
 - Driver polling worker and MQTT publishing worker connected by typed queues.
 - Modbus reads are grouped by function and nearby address ranges, so many tags
   can be collected with fewer device requests.
-- Lightweight PySide6 GUI for device/tag/MQTT settings, connection test,
-  start/stop, and recent runtime logs.
+- Web UI for device/tag/output settings, start/stop, and recent runtime logs.
 - Device and tag lists support add, update, and delete from the GUI. Selecting a
   device shows its tags in the adjacent list.
 - Output settings are shown under a Plugins tab. The current v1 plugin is MQTT,
@@ -35,12 +35,6 @@ On Linux or Raspberry Pi:
 python3 -m venv .venv
 . .venv/bin/activate
 python -m pip install -e ".[dev]"
-```
-
-## Run
-
-```bash
-industrial-gateway
 ```
 
 ## Run Web Service

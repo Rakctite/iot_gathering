@@ -1,4 +1,4 @@
-from industrial_gateway.gui.plugin_forms import default_plugin_config, plugin_fields
+from industrial_gateway.config_schema import default_plugin_config, plugin_fields
 
 
 def test_plugin_forms_include_mqtt_postgresql_and_mssql_fields():
