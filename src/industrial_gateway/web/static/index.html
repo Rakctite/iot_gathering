@@ -41,11 +41,21 @@
             <form id="deviceForm" class="panel"></form>
             <div class="panel">
               <form id="tagForm"></form>
-              <h2>Tags</h2>
-              <button id="importTags">Import CSV</button>
-              <button id="exportTags">Export CSV</button>
+              <div class="table-header">
+                <h2>Tags</h2>
+                <div class="page-controls">
+                  <button id="prevTagGroupPage" type="button" title="Previous group">&lt;</button>
+                  <span id="tagGroupPageLabel"></span>
+                  <button id="nextTagGroupPage" type="button" title="Next group">&gt;</button>
+                  <button id="prevTagListPage" type="button" title="Previous tag page">&lt;</button>
+                  <span id="tagListPageLabel"></span>
+                  <button id="nextTagListPage" type="button" title="Next tag page">&gt;</button>
+                </div>
+              </div>
+              <button id="importTags" type="button">Import CSV</button>
+              <button id="exportTags" type="button">Export CSV</button>
               <input id="tagCsvFile" type="file" accept=".csv,text/csv" hidden>
-              <table><thead><tr><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
+              <table class="fixed-table"><thead><tr><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
             </div>
           </div>
         </section>
@@ -59,10 +69,32 @@
             <button id="stopRuntime">Stop</button>
             <label>Health interval <input id="healthInterval" type="number" min="1" value="10"></label>
           </div>
-          <h2>Runtime Tags</h2>
-          <table><thead><tr><th>Device</th><th>Tag</th><th>Mode</th><th>Updated</th><th>Status</th></tr></thead><tbody id="runtimeTags"></tbody></table>
-          <h2>Logs</h2>
-          <pre id="logs"></pre>
+          <div class="runtime-grid">
+            <section class="runtime-tags-panel">
+              <div class="runtime-panel-header">
+                <h2>Runtime Tags</h2>
+                <div class="runtime-page-controls">
+                  <button id="prevDevicePage" title="Previous device">&lt;</button>
+                  <span id="devicePageLabel"></span>
+                  <button id="nextDevicePage" title="Next device">&gt;</button>
+                  <button id="prevGroupPage" title="Previous group">&lt;</button>
+                  <span id="groupPageLabel"></span>
+                  <button id="nextGroupPage" title="Next group">&gt;</button>
+                  <button id="prevTagPage" title="Previous tag page">&lt;</button>
+                  <span id="tagPageLabel"></span>
+                  <button id="nextTagPage" title="Next tag page">&gt;</button>
+                </div>
+              </div>
+              <table class="runtime-table">
+                <thead><tr><th>Device</th><th>Group</th><th>Tag</th><th>Mode</th><th>Updated</th><th>Status</th></tr></thead>
+                <tbody id="runtimeTags"></tbody>
+              </table>
+            </section>
+            <section class="runtime-log-panel">
+              <h2>Logs</h2>
+              <pre id="logs"></pre>
+            </section>
+          </div>
         </section>
       </section>
     </main>

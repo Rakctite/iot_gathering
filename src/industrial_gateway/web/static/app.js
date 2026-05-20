@@ -1,9 +1,18 @@
 const state = {
   devices: [],
   selectedDevice: null,
+  tagRows: [],
+  tagGroupPage: 0,
+  tagListPage: 0,
+  tagPageSize: 12,
   driverSchema: {},
   pluginSchema: {},
   selectedPlugin: "mqtt",
+  runtimeSnapshot: { running: false, runtime_tags: [], logs: [] },
+  runtimeDevicePage: 0,
+  runtimeGroupPage: 0,
+  runtimeTagPage: 0,
+  runtimePageSize: 12,
   ws: null
 };
 
@@ -122,6 +131,8 @@ function renderDevices() {
 
 function selectDevice(device) {
   state.selectedDevice = device;
+  state.tagGroupPage = 0;
+  state.tagListPage = 0;
   renderDevices();
 }
 
@@ -197,11 +208,57 @@ function renderTagForm() {
 async function loadTags() {
   const tbody = document.getElementById("tagList");
   if (!state.selectedDevice) {
+    state.tagRows = [];
     tbody.innerHTML = "";
+    renderTagPageLabels({ groups: [], selectedGroup: "", pageCount: 1, totalRows: 0 });
     return;
   }
-  const tags = await api(`/api/devices/${state.selectedDevice.id}/tags`);
-  tbody.innerHTML = tags.map(tag => `<tr><td>${escapeHtml(tag.name)}</td><td>${escapeHtml(tag.function)}</td><td>${escapeHtml(tag.data_type)}</td></tr>`).join("");
+  state.tagRows = await api(`/api/devices/${state.selectedDevice.id}/tags`);
+  renderTags();
+}
+
+function renderTags() {
+  const page = tagPageRows(state.tagRows || []);
+  document.getElementById("tagList").innerHTML = page.rows.map(tag =>
+    `<tr><td>${escapeHtml(tag.tag_group || "")}</td><td>${escapeHtml(tag.name)}</td><td>${escapeHtml(tag.function)}</td><td>${escapeHtml(tag.data_type)}</td></tr>`
+  ).join("");
+  renderTagPageLabels(page);
+}
+
+function tagPageRows(rows) {
+  const groups = uniqueValues(rows.map(row => row.tag_group || "default"));
+  state.tagGroupPage = clampPage(state.tagGroupPage, groups.length);
+  const selectedGroup = groups[state.tagGroupPage] || "";
+  const groupRows = selectedGroup
+    ? rows.filter(row => (row.tag_group || "default") === selectedGroup)
+    : rows;
+  const pageCount = Math.max(1, Math.ceil(groupRows.length / state.tagPageSize));
+  state.tagListPage = clampPage(state.tagListPage, pageCount);
+  const start = state.tagListPage * state.tagPageSize;
+  return {
+    rows: groupRows.slice(start, start + state.tagPageSize),
+    groups,
+    selectedGroup,
+    pageCount,
+    totalRows: groupRows.length
+  };
+}
+
+function renderTagPageLabels(page) {
+  document.getElementById("tagGroupPageLabel").textContent = page.groups.length
+    ? `${state.tagGroupPage + 1}/${page.groups.length} ${shortLabel(page.selectedGroup)}`
+    : "0/0";
+  document.getElementById("tagListPageLabel").textContent = `${state.tagListPage + 1}/${page.pageCount} (${page.totalRows})`;
+}
+
+function turnTagPage(kind, delta) {
+  if (kind === "group") {
+    state.tagGroupPage += delta;
+    state.tagListPage = 0;
+  } else {
+    state.tagListPage += delta;
+  }
+  renderTags();
 }
 
 async function saveTag(event) {
@@ -269,11 +326,78 @@ async function loadRuntime() {
 }
 
 function renderRuntime(snapshot) {
+  state.runtimeSnapshot = snapshot;
   document.getElementById("runtimeBadge").textContent = snapshot.running ? "Running" : "Stopped";
-  document.getElementById("runtimeTags").innerHTML = snapshot.runtime_tags.map(row =>
-    `<tr><td>${escapeHtml(row.device)}</td><td>${escapeHtml(row.tag)}</td><td>${escapeHtml(row.mode)}</td><td>${escapeHtml(row.timestamp || "")}</td><td>${escapeHtml(row.error || row.quality)}</td></tr>`
+  const runtimeRows = runtimePageRows(snapshot.runtime_tags || []);
+  document.getElementById("runtimeTags").innerHTML = runtimeRows.rows.map(row =>
+    `<tr><td>${escapeHtml(row.device)}</td><td>${escapeHtml(row.tag_group || "")}</td><td>${escapeHtml(row.tag)}</td><td>${escapeHtml(row.mode)}</td><td>${escapeHtml(row.timestamp || "")}</td><td>${escapeHtml(row.error || row.quality)}</td></tr>`
   ).join("");
   document.getElementById("logs").textContent = (snapshot.logs || []).join("\n");
+  renderRuntimePageLabels(runtimeRows);
+}
+
+function runtimePageRows(rows) {
+  const devices = uniqueValues(rows.map(row => row.device || ""));
+  state.runtimeDevicePage = clampPage(state.runtimeDevicePage, devices.length);
+  const selectedDevice = devices[state.runtimeDevicePage] || "";
+  const deviceRows = selectedDevice ? rows.filter(row => (row.device || "") === selectedDevice) : rows;
+  const groups = uniqueValues(deviceRows.map(row => row.tag_group || "default"));
+  state.runtimeGroupPage = clampPage(state.runtimeGroupPage, groups.length);
+  const selectedGroup = groups[state.runtimeGroupPage] || "";
+  const groupRows = selectedGroup
+    ? deviceRows.filter(row => (row.tag_group || "default") === selectedGroup)
+    : deviceRows;
+  const pageCount = Math.max(1, Math.ceil(groupRows.length / state.runtimePageSize));
+  state.runtimeTagPage = clampPage(state.runtimeTagPage, pageCount);
+  const start = state.runtimeTagPage * state.runtimePageSize;
+  return {
+    rows: groupRows.slice(start, start + state.runtimePageSize),
+    devices,
+    selectedDevice,
+    groups,
+    selectedGroup,
+    pageCount,
+    totalRows: groupRows.length
+  };
+}
+
+function renderRuntimePageLabels(page) {
+  document.getElementById("devicePageLabel").textContent = page.devices.length
+    ? `${state.runtimeDevicePage + 1}/${page.devices.length} ${shortLabel(page.selectedDevice)}`
+    : "0/0";
+  document.getElementById("groupPageLabel").textContent = page.groups.length
+    ? `${state.runtimeGroupPage + 1}/${page.groups.length} ${shortLabel(page.selectedGroup)}`
+    : "0/0";
+  document.getElementById("tagPageLabel").textContent = `${state.runtimeTagPage + 1}/${page.pageCount} (${page.totalRows})`;
+}
+
+function shortLabel(value, max = 18) {
+  const text = String(value || "");
+  const limit = Math.max(0, max - 3);
+  return text.length > max ? `${text.slice(0, limit)}...` : text;
+}
+
+function uniqueValues(values) {
+  return [...new Set(values.filter(value => value !== ""))];
+}
+
+function clampPage(index, count) {
+  if (count <= 0) return 0;
+  return Math.min(Math.max(index, 0), count - 1);
+}
+
+function turnRuntimePage(kind, delta) {
+  if (kind === "device") {
+    state.runtimeDevicePage += delta;
+    state.runtimeGroupPage = 0;
+    state.runtimeTagPage = 0;
+  } else if (kind === "group") {
+    state.runtimeGroupPage += delta;
+    state.runtimeTagPage = 0;
+  } else {
+    state.runtimeTagPage += delta;
+  }
+  renderRuntime(state.runtimeSnapshot);
 }
 
 function connectRuntimeEvents() {
@@ -305,6 +429,10 @@ document.getElementById("exportTags").onclick = () => {
   if (!state.selectedDevice) return;
   downloadCsv(`/api/devices/${state.selectedDevice.id}/tags.csv`);
 };
+document.getElementById("prevTagGroupPage").onclick = () => turnTagPage("group", -1);
+document.getElementById("nextTagGroupPage").onclick = () => turnTagPage("group", 1);
+document.getElementById("prevTagListPage").onclick = () => turnTagPage("tag", -1);
+document.getElementById("nextTagListPage").onclick = () => turnTagPage("tag", 1);
 document.getElementById("tagCsvFile").onchange = async event => {
   try {
     await importTagsCsv(event.target.files[0]);
@@ -315,6 +443,12 @@ document.getElementById("tagCsvFile").onchange = async event => {
 };
 document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", { method: "POST", body: JSON.stringify({ health_interval_s: Number(document.getElementById("healthInterval").value) }) }));
 document.getElementById("stopRuntime").onclick = async () => renderRuntime(await api("/api/runtime/stop", { method: "POST" }));
+document.getElementById("prevDevicePage").onclick = () => turnRuntimePage("device", -1);
+document.getElementById("nextDevicePage").onclick = () => turnRuntimePage("device", 1);
+document.getElementById("prevGroupPage").onclick = () => turnRuntimePage("group", -1);
+document.getElementById("nextGroupPage").onclick = () => turnRuntimePage("group", 1);
+document.getElementById("prevTagPage").onclick = () => turnRuntimePage("tag", -1);
+document.getElementById("nextTagPage").onclick = () => turnRuntimePage("tag", 1);
 document.querySelectorAll(".tabs button").forEach(button => button.onclick = () => {
   document.querySelectorAll(".tabs button").forEach(item => item.classList.remove("active"));
   document.querySelectorAll(".tab-panel").forEach(item => item.classList.add("hidden"));

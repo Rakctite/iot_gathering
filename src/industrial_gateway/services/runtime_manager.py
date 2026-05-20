@@ -170,8 +170,10 @@ class RuntimeManager:
     def _record_status(self, item: Any) -> dict[str, Any]:
         if isinstance(item, dict) and item.get("type") == "tag_update":
             key = (str(item.get("device", "")), str(item.get("node_id") or item.get("tag", "")))
-            self.runtime_tags[key] = item
-            return item
+            existing = self.runtime_tags.get(key, {})
+            merged = {**existing, **item}
+            self.runtime_tags[key] = merged
+            return merged
         if isinstance(item, dict) and item.get("type") == "server_status":
             self.server_statuses[str(item.get("device", ""))] = item
             return item
@@ -194,6 +196,7 @@ class RuntimeManager:
                 rows[key] = {
                     "type": "tag_update",
                     "device": device.name,
+                    "tag_group": tag.tag_group,
                     "tag": tag.name,
                     "node_id": tag.node_id or "",
                     "mode": mode,

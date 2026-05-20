@@ -1,4 +1,4 @@
-from industrial_gateway.models import DeviceSpec, SinkConfig
+from industrial_gateway.models import DeviceSpec, SinkConfig, TagSpec
 from industrial_gateway.services.runtime_manager import RuntimeManager
 from industrial_gateway.store import ConfigStore
 
@@ -78,7 +78,20 @@ def test_start_stop_are_idempotent(tmp_path):
 
 
 def test_drain_status_records_tag_and_log_events(tmp_path):
-    manager = RuntimeManager(make_store(tmp_path), driver_registry={}, sink_registry={})
+    store = make_store(tmp_path)
+    device_id = store.list_devices()[0].id
+    store.save_tag(
+        TagSpec(
+            device_id=device_id,
+            tag_group="group-a",
+            name="temperature",
+            address=100,
+            function="holding_register",
+            data_type="float32",
+        )
+    )
+    manager = RuntimeManager(store, driver_registry={}, sink_registry={})
+    manager.runtime_tags = manager._initial_runtime_tags()
 
     manager.status_queue.put(
         {
@@ -97,6 +110,7 @@ def test_drain_status_records_tag_and_log_events(tmp_path):
 
     assert events[0]["type"] == "tag_update"
     assert manager.snapshot()["runtime_tags"][0]["tag"] == "temperature"
+    assert manager.snapshot()["runtime_tags"][0]["tag_group"] == "group-a"
     assert manager.snapshot()["logs"] == ["log line"]
 
     manager.shutdown()
