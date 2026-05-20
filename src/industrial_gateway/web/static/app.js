@@ -17,6 +17,21 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+async function uploadCsv(path, file) {
+  const response = await fetch(path, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "text/csv" },
+    body: await file.text()
+  });
+  if (!response.ok) throw await response.json().catch(() => ({ message: response.statusText }));
+  return response.json();
+}
+
+function downloadCsv(path) {
+  window.location.href = path;
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch]));
 }
@@ -209,6 +224,20 @@ async function saveTag(event) {
   await loadTags();
 }
 
+async function importDevicesCsv(file) {
+  if (!file) return;
+  await uploadCsv("/api/devices/import", file);
+  state.devices = await api("/api/devices");
+  state.selectedDevice = state.devices[0] || null;
+  renderDevices();
+}
+
+async function importTagsCsv(file) {
+  if (!file || !state.selectedDevice) return;
+  await uploadCsv(`/api/devices/${state.selectedDevice.id}/tags/import`, file);
+  await loadTags();
+}
+
 async function loadPlugin() {
   const plugin = await api(`/api/plugins/${state.selectedPlugin}`);
   const form = document.getElementById("pluginForm");
@@ -261,6 +290,29 @@ function connectRuntimeEvents() {
 document.getElementById("loginForm").addEventListener("submit", login);
 document.getElementById("logoutButton").onclick = async () => { await api("/api/auth/logout", { method: "POST" }); showConsole(false); };
 document.getElementById("newDevice").onclick = () => renderDeviceForm(null);
+document.getElementById("importDevices").onclick = () => document.getElementById("deviceCsvFile").click();
+document.getElementById("exportDevices").onclick = () => downloadCsv("/api/devices.csv");
+document.getElementById("deviceCsvFile").onchange = async event => {
+  try {
+    await importDevicesCsv(event.target.files[0]);
+    event.target.value = "";
+  } catch (error) {
+    alert(error.message || "Device CSV import failed");
+  }
+};
+document.getElementById("importTags").onclick = () => document.getElementById("tagCsvFile").click();
+document.getElementById("exportTags").onclick = () => {
+  if (!state.selectedDevice) return;
+  downloadCsv(`/api/devices/${state.selectedDevice.id}/tags.csv`);
+};
+document.getElementById("tagCsvFile").onchange = async event => {
+  try {
+    await importTagsCsv(event.target.files[0]);
+    event.target.value = "";
+  } catch (error) {
+    alert(error.message || "Tag CSV import failed");
+  }
+};
 document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", { method: "POST", body: JSON.stringify({ health_interval_s: Number(document.getElementById("healthInterval").value) }) }));
 document.getElementById("stopRuntime").onclick = async () => renderRuntime(await api("/api/runtime/stop", { method: "POST" }));
 document.querySelectorAll(".tabs button").forEach(button => button.onclick = () => {

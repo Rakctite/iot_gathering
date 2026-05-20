@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from collections.abc import AsyncIterator
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -59,6 +59,10 @@ def create_app(
     async def key_error_handler(_request, exc: KeyError):
         return JSONResponse(status_code=404, content={"error": "not_found", "message": str(exc)})
 
+    @app.exception_handler(ValueError)
+    async def value_error_handler(_request, exc: ValueError):
+        return JSONResponse(status_code=400, content={"error": "bad_request", "message": str(exc)})
+
     def session_dependency(industrial_gateway_session: str | None = Cookie(default=None)) -> dict[str, str]:
         return require_session(auth_settings, industrial_gateway_session)
 
@@ -110,9 +114,33 @@ def create_app(
         config_service.delete_device(device_id)
         return {"deleted": True}
 
+    @app.get("/api/devices.csv")
+    def export_devices_csv(_user: dict[str, str] = Depends(session_dependency)):
+        return Response(
+            config_service.export_devices_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="devices.csv"'},
+        )
+
+    @app.post("/api/devices/import")
+    async def import_devices_csv(request: Request, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.import_devices_csv((await request.body()).decode("utf-8-sig"))
+
     @app.get("/api/devices/{device_id}/tags")
     def list_tags(device_id: int, _user: dict[str, str] = Depends(session_dependency)):
         return config_service.list_tags(device_id)
+
+    @app.get("/api/devices/{device_id}/tags.csv")
+    def export_tags_csv(device_id: int, _user: dict[str, str] = Depends(session_dependency)):
+        return Response(
+            config_service.export_tags_csv(device_id),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="device-{device_id}-tags.csv"'},
+        )
+
+    @app.post("/api/devices/{device_id}/tags/import")
+    async def import_tags_csv(device_id: int, request: Request, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.import_tags_csv(device_id, (await request.body()).decode("utf-8-sig"))
 
     @app.post("/api/devices/{device_id}/tags")
     def create_tag(device_id: int, payload: dict, _user: dict[str, str] = Depends(session_dependency)):

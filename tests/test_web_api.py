@@ -93,3 +93,68 @@ def test_runtime_events_websocket_sends_snapshot(tmp_path):
 
     assert message["type"] == "snapshot"
     assert message["payload"]["running"] is False
+
+
+def test_device_csv_import_and_export(tmp_path):
+    client = make_client(tmp_path)
+    csv_text = "\n".join(
+        [
+            "device_group,device_name,driver_type,enabled,poll_interval_ms,host,port,unit_id,tag_group,tag_name,address,function,data_type,scale,tag_enabled",
+            "line-a,plc-1,modbus_tcp,1,1000,127.0.0.1,502,1,temp,temperature,100,holding_register,float32,1.0,1",
+            "",
+        ]
+    )
+
+    imported = client.post("/api/devices/import", content=csv_text, headers={"Content-Type": "text/csv"})
+
+    assert imported.status_code == 200
+    assert imported.json() == {"devices": 1, "tags": 1}
+    devices = client.get("/api/devices").json()
+    assert devices[0]["name"] == "plc-1"
+    tags = client.get(f"/api/devices/{devices[0]['id']}/tags").json()
+    assert tags[0]["name"] == "temperature"
+
+    exported = client.get("/api/devices.csv")
+
+    assert exported.status_code == 200
+    assert "text/csv" in exported.headers["content-type"]
+    assert "plc-1" in exported.text
+    assert "temperature" in exported.text
+
+
+def test_tag_csv_import_and_export(tmp_path):
+    client = make_client(tmp_path)
+    device = client.post(
+        "/api/devices",
+        json={
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840/freeopcua/server/", "mode": "polling"},
+        },
+    ).json()
+    csv_text = "\n".join(
+        [
+            "tag_group,name,node_id,address,function,data_type,scale,enabled",
+            "pressures,bar,ns=2;s=Machine.Bar,0,opcua_node,auto,1.0,1",
+            "",
+        ]
+    )
+
+    imported = client.post(
+        f"/api/devices/{device['id']}/tags/import",
+        content=csv_text,
+        headers={"Content-Type": "text/csv"},
+    )
+
+    assert imported.status_code == 200
+    assert imported.json() == {"tags": 1}
+    tags = client.get(f"/api/devices/{device['id']}/tags").json()
+    assert tags[0]["node_id"] == "ns=2;s=Machine.Bar"
+
+    exported = client.get(f"/api/devices/{device['id']}/tags.csv")
+
+    assert exported.status_code == 200
+    assert "bar" in exported.text
+    assert "ns=2;s=Machine.Bar" in exported.text
