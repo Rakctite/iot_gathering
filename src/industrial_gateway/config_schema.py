@@ -55,6 +55,18 @@ _CONNECTION_FIELDS: dict[str, tuple[ConnectionField, ...]] = {
         ConnectionField("mode", "Mode", "choice", "polling", choices=("polling", "subscription")),
         ConnectionField("subscription_interval_ms", "Subscription ms", "int", 250, minimum=50, maximum=60000),
     ),
+    "mqtt": (
+        ConnectionField("host", "Broker host", "text", "localhost"),
+        ConnectionField("port", "Broker port", "int", 1883, minimum=1, maximum=65535),
+        ConnectionField("topic_filter", "Topic filter", "text", "curiot/+/data"),
+        ConnectionField("client_id", "Client ID", "text", "industrial-gateway-input"),
+        ConnectionField("username", "Username", "text", ""),
+        ConnectionField("password", "Password", "text", ""),
+        ConnectionField("qos", "QoS", "int", 0, minimum=0, maximum=2),
+        ConnectionField("topic_mac_index", "Topic MAC index", "int", 1, minimum=0, maximum=20),
+        ConnectionField("timestamp_field", "Timestamp field", "text", "Time"),
+        ConnectionField("sensor_id_field", "Sensor ID field", "text", "sensor_id"),
+    ),
 }
 
 _PLUGIN_FIELDS: dict[str, tuple[PluginField, ...]] = {
@@ -112,11 +124,13 @@ def normalize_connection_for_driver(driver_type: str, existing: dict[str, Any] |
 def tag_function_choices_for_driver(driver_type: str) -> list[str]:
     if driver_type == "opcua":
         return ["opcua_node"]
+    if driver_type == "mqtt":
+        return ["json_field"]
     return ["holding_register", "input_register", "coil", "discrete_input"]
 
 
 def tag_type_choices_for_driver(driver_type: str) -> list[str]:
-    if driver_type == "opcua":
+    if driver_type in {"opcua", "mqtt"}:
         return ["auto", "bool", "int16", "uint16", "int32", "uint32", "float32", "float64", "string"]
     return ["bool", "int16", "uint16", "int32", "uint32", "float32", "float64", "string"]
 

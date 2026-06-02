@@ -20,7 +20,7 @@ def test_modbus_tag_validation_rejects_negative_address():
 
 
 def test_batch_message_contains_device_timestamp_and_tag_quality():
-    timestamp = datetime(2026, 5, 16, 2, 30, tzinfo=timezone.utc)
+    timestamp = datetime(2026, 5, 16, 2, 30, 0, 123456, tzinfo=timezone.utc)
     device = DeviceSpec(
         id=7,
         name="boiler-plc",
@@ -43,7 +43,7 @@ def test_batch_message_contains_device_timestamp_and_tag_quality():
     assert message.topic == "industrial/boiler-plc/data"
     assert message.payload == {
         "device": {"id": 7, "name": "boiler-plc"},
-        "timestamp": "2026-05-16T02:30:00+00:00",
+        "timestamp": "2026-05-16T02:30:00.123+00:00",
         "tags": [
             {
                 "name": "temperature",
@@ -51,7 +51,7 @@ def test_batch_message_contains_device_timestamp_and_tag_quality():
                 "value": 31.5,
                 "quality": "good",
                 "error": None,
-                "timestamp": "2026-05-16T02:30:00+00:00",
+                "timestamp": "2026-05-16T02:30:00.123+00:00",
             }
         ],
     }

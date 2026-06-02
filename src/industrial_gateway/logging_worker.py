@@ -81,7 +81,20 @@ class AsyncLogWorker(threading.Thread):
 
 def _format_record(record: dict[str, Any]) -> str:
     data = json.dumps(record["data"], ensure_ascii=False, sort_keys=True)
-    return f'{record["timestamp"]} [{record["level"]}] {record["source"]}: {record["message"]} {data}'
+    source = _format_source(record)
+    return f'{record["timestamp"]} [{record["level"]}] {source} {record["message"]} {data}'
+
+
+def _format_source(record: dict[str, Any]) -> str:
+    source = str(record["source"])
+    data = record["data"]
+    if source == "driver":
+        driver = data.get("driver") or data.get("driver_type")
+        return f"[driver][{driver}]" if driver else "[driver]"
+    if source in {"sink", "plugin"}:
+        plugin = data.get("plugin") or data.get("plugin_type") or data.get("sink_type")
+        return f"[plugin][{plugin}]" if plugin else "[plugin]"
+    return f"[{source}]"
 
 
 def _normalize_record(record: dict[str, Any]) -> dict[str, Any]:

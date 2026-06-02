@@ -11,7 +11,7 @@ from industrial_gateway.defaults import sink_registry as default_sink_registry
 from industrial_gateway.logging_worker import AsyncLogWorker
 from industrial_gateway.models import MqttConfig
 from industrial_gateway.store import ConfigStore
-from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, SinkPublisher
+from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, OutputRoute, SinkPublisher
 
 
 class RuntimeManager:
@@ -72,12 +72,15 @@ class RuntimeManager:
                 base_topic=sink_config.config.get("base_topic", "industrial"),
                 qos=int(sink_config.config.get("qos", 0)),
             )
+            output_routes = self._output_routes()
             self.publisher = self.publisher_class(
                 sink,
                 message_config,
                 self.result_queue,
                 self.status_queue,
                 log_queue=self.logger.input_queue,
+                plugin_type=sink_config.sink_type,
+                output_routes=output_routes,
             )
             self.publisher.start()
 
@@ -88,7 +91,7 @@ class RuntimeManager:
                     continue
                 driver_class = self.driver_registry.get(device.driver_type)
                 tags = self.store.list_tags(device.id or 0)
-                if device.driver_type == "opcua" and device.connection.get("mode") == "subscription":
+                if _uses_subscription_worker(device):
                     worker = self.subscription_worker_class(
                         driver_class,
                         device,
@@ -186,7 +189,7 @@ class RuntimeManager:
                 continue
             mode = (
                 "Subscription"
-                if device.driver_type == "opcua" and device.connection.get("mode") == "subscription"
+                if _uses_subscription_worker(device)
                 else "Polling"
             )
             for tag in self.store.list_tags(device.id or 0):
@@ -212,3 +215,44 @@ class RuntimeManager:
                 queue.get_nowait()
             except Empty:
                 return
+
+    def _output_routes(self) -> list[OutputRoute]:
+        selected_sink = self.store.get_sink_config()
+        if selected_sink.sink_type != "mqtt":
+            return []
+        routes = []
+        for route in self.store.list_output_routes():
+            if not route.enabled or route.sink_type != "mqtt":
+                continue
+            config = {**selected_sink.config, "enabled": route.enabled}
+            base_topic = str(config.get("base_topic") or "industrial").strip("/")
+            mqtt_config = MqttConfig(
+                base_topic=base_topic,
+                qos=int(config.get("qos", 0)),
+            )
+            routes.append(
+                OutputRoute(
+                    device_id=route.device_id,
+                    tag_group=route.tag_group,
+                    sink_type=route.sink_type,
+                    mqtt_config=mqtt_config,
+                    topic=_route_topic(base_topic, route.config.get("topic")),
+                )
+            )
+        return routes
+
+
+def _uses_subscription_worker(device: Any) -> bool:
+    return device.driver_type == "mqtt" or (
+        device.driver_type == "opcua" and device.connection.get("mode") == "subscription"
+    )
+
+
+def _route_topic(base_topic: str, route_topic: Any) -> str:
+    topic = str(route_topic or "").strip("/")
+    if not topic:
+        return ""
+    base = base_topic.strip("/")
+    if not base or topic == base or topic.startswith(f"{base}/"):
+        return topic
+    return f"{base}/{topic}"

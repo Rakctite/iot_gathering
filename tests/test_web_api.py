@@ -56,6 +56,31 @@ def test_device_tag_plugin_api_round_trip(tmp_path):
     assert plugin.status_code == 200
     assert client.get("/api/plugins/mqtt").json()["config"]["host"] == "broker"
 
+    route = client.post(
+        "/api/plugin-routes",
+        json={
+            "device_id": device["id"],
+            "tag_group": "temp",
+            "sink_type": "mqtt",
+            "enabled": True,
+            "config": {
+                "topic": "plant/temp/current",
+                "host": "route-broker",
+                "port": 1883,
+                "base_topic": "route",
+                "client_id": "route",
+                "qos": 0,
+            },
+        },
+    )
+    assert route.status_code == 200
+    routes = client.get("/api/plugin-routes").json()
+    assert routes[0]["device_id"] == device["id"]
+    assert routes[0]["device_name"] == "plc-1"
+    assert routes[0]["tag_group"] == "temp"
+    assert routes[0]["sink_type"] == "mqtt"
+    assert routes[0]["config"] == {"topic": "plant/temp/current"}
+
 
 def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
     client = make_client(tmp_path)
@@ -92,7 +117,7 @@ def test_runtime_events_websocket_sends_snapshot(tmp_path):
         message = websocket.receive_json()
 
     assert message["type"] == "snapshot"
-    assert message["payload"]["running"] is False
+    assert message["payload"]["running"] is True
 
 
 def test_device_csv_import_and_export(tmp_path):

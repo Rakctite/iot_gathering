@@ -60,8 +60,20 @@
           </div>
         </section>
         <section id="pluginsTab" class="tab-panel hidden">
-          <h2>Output Plugin</h2>
-          <form id="pluginForm" class="panel"></form>
+          <div class="plugin-layout">
+            <div class="plugin-settings">
+              <h2>Output Plugin</h2>
+              <form id="pluginForm" class="panel"></form>
+              <div id="pluginRouteEditor">
+                <h2>Output Routes</h2>
+                <form id="pluginRouteForm" class="panel"></form>
+              </div>
+            </div>
+            <div id="pluginRouteListPanel" class="plugin-routes-panel panel">
+              <h2>Route List</h2>
+              <table class="fixed-table"><thead><tr><th>Device</th><th>Group</th><th>Plugin</th><th>Enabled</th></tr></thead><tbody id="pluginRouteList"></tbody></table>
+            </div>
+          </div>
         </section>
         <section id="runtimeTab" class="tab-panel hidden">
           <div class="runtime-actions">
@@ -74,12 +86,6 @@
               <div class="runtime-panel-header">
                 <h2>Runtime Tags</h2>
                 <div class="runtime-page-controls">
-                  <button id="prevDevicePage" title="Previous device">&lt;</button>
-                  <span id="devicePageLabel"></span>
-                  <button id="nextDevicePage" title="Next device">&gt;</button>
-                  <button id="prevGroupPage" title="Previous group">&lt;</button>
-                  <span id="groupPageLabel"></span>
-                  <button id="nextGroupPage" title="Next group">&gt;</button>
                   <button id="prevTagPage" title="Previous tag page">&lt;</button>
                   <span id="tagPageLabel"></span>
                   <button id="nextTagPage" title="Next tag page">&gt;</button>
@@ -92,7 +98,7 @@
             </section>
             <section class="runtime-log-panel">
               <h2>Logs</h2>
-              <pre id="logs"></pre>
+              <div class="runtime-log-scroll"><pre id="logs"></pre></div>
             </section>
           </div>
         </section>

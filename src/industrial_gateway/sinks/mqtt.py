@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from datetime import datetime
 from typing import Any
 
 from industrial_gateway.models import BatchMessage, MqttConfig
@@ -67,7 +68,9 @@ class MqttSink:
         if not self.received_topic_path:
             if self.dynamic_topic_enabled:
                 raise RuntimeError("MQTT dynamic topic has not been received yet")
-            return message.topic
+            if message.use_message_topic:
+                return message.topic.strip("/")
+            return self.config.base_topic.strip("/")
         group = _phh_group_from_topic(message.topic)
         if group is None:
             return self.received_topic_path
@@ -148,7 +151,28 @@ def _mqtt_payload(message: BatchMessage) -> dict[str, Any]:
 def _mqtt_timestamp(timestamp: Any) -> str:
     if timestamp is None:
         return ""
-    return str(timestamp).replace("T", " ")
+    parsed = _parse_timestamp(timestamp)
+    if parsed is None:
+        return str(timestamp).replace("T", " ")
+    offset = parsed.strftime("%z")
+    offset_hour = offset[:3] if len(offset) >= 3 else offset
+    return f"{parsed:%Y-%m-%d %H:%M:%S}.{parsed.microsecond // 1000:03d}{offset_hour}"
+
+
+def _parse_timestamp(timestamp: Any) -> datetime | None:
+    if isinstance(timestamp, datetime):
+        return timestamp
+    if not isinstance(timestamp, str):
+        return None
+    text = timestamp.strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = f"{text[:-1]}+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def _phh_group_from_topic(topic: str) -> str | None:

@@ -1,4 +1,4 @@
-from industrial_gateway.models import DeviceSpec, SinkConfig, TagSpec
+from industrial_gateway.models import DeviceSpec, OutputRouteConfig, SinkConfig, TagSpec
 from industrial_gateway.services.runtime_manager import RuntimeManager
 from industrial_gateway.store import ConfigStore
 
@@ -112,5 +112,51 @@ def test_drain_status_records_tag_and_log_events(tmp_path):
     assert manager.snapshot()["runtime_tags"][0]["tag"] == "temperature"
     assert manager.snapshot()["runtime_tags"][0]["tag_group"] == "group-a"
     assert manager.snapshot()["logs"] == ["log line"]
+
+    manager.shutdown()
+
+
+def test_output_routes_inherit_selected_mqtt_plugin_config(tmp_path):
+    store = make_store(tmp_path)
+    store.save_sink_config(
+        SinkConfig(
+            sink_type="mqtt",
+            enabled=True,
+            config={"host": "broker", "port": 1884, "base_topic": "plant", "client_id": "gw", "qos": 1},
+        )
+    )
+    store.save_output_route(
+        OutputRouteConfig(
+            device_id=store.list_devices()[0].id,
+            tag_group="temp",
+            enabled=True,
+            config={
+                "topic": "temp/current",
+                "host": "stale-broker",
+                "base_topic": "stale",
+                "client_id": "stale-client",
+                "qos": 0,
+            },
+        )
+    )
+    manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink})
+
+    routes = manager._output_routes()
+
+    assert len(routes) == 1
+    assert routes[0].mqtt_config.base_topic == "plant"
+    assert routes[0].mqtt_config.qos == 1
+    assert routes[0].topic == "plant/temp/current"
+
+    manager.shutdown()
+
+
+def test_output_routes_are_hidden_when_selected_plugin_is_not_mqtt(tmp_path):
+    store = make_store(tmp_path)
+    store.save_sink_config(SinkConfig(sink_type="database", enabled=True, config={}))
+    store.save_output_route(OutputRouteConfig(device_id=store.list_devices()[0].id, tag_group="temp", enabled=True))
+    manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink, "database": FakeSink})
+
+    assert manager._output_routes() == []
 
     manager.shutdown()

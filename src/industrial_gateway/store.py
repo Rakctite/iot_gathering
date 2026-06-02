@@ -5,7 +5,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from industrial_gateway.models import DeviceSpec, MqttConfig, SinkConfig, TagSpec, validate_tag
+from industrial_gateway.models import DeviceSpec, MqttConfig, OutputRouteConfig, SinkConfig, TagSpec, validate_tag
 
 
 class ConfigStore:
@@ -60,6 +60,14 @@ class ConfigStore:
                 CREATE TABLE IF NOT EXISTS sink_selection (
                     id INTEGER PRIMARY KEY CHECK (id = 1),
                     sink_type TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS output_routes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    device_id INTEGER REFERENCES devices(id) ON DELETE CASCADE,
+                    tag_group TEXT NOT NULL DEFAULT '',
+                    sink_type TEXT NOT NULL,
+                    enabled INTEGER NOT NULL,
+                    config_json TEXT NOT NULL
                 );
                 """
             )
@@ -342,6 +350,65 @@ class ConfigStore:
             )
             for row in rows
         ]
+
+    def save_output_route(self, route: OutputRouteConfig) -> int:
+        with self._connect() as conn:
+            if route.id is None:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO output_routes (device_id, tag_group, sink_type, enabled, config_json)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (
+                        route.device_id,
+                        route.tag_group,
+                        route.sink_type,
+                        int(route.enabled),
+                        json.dumps(route.config),
+                    ),
+                )
+                return int(cursor.lastrowid)
+            conn.execute(
+                """
+                UPDATE output_routes
+                SET device_id = ?, tag_group = ?, sink_type = ?, enabled = ?, config_json = ?
+                WHERE id = ?
+                """,
+                (
+                    route.device_id,
+                    route.tag_group,
+                    route.sink_type,
+                    int(route.enabled),
+                    json.dumps(route.config),
+                    route.id,
+                ),
+            )
+            return route.id
+
+    def list_output_routes(self) -> list[OutputRouteConfig]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, device_id, tag_group, sink_type, enabled, config_json
+                FROM output_routes
+                ORDER BY device_id IS NULL, device_id, tag_group, sink_type
+                """
+            ).fetchall()
+        return [
+            OutputRouteConfig(
+                id=row["id"],
+                device_id=row["device_id"],
+                tag_group=row["tag_group"],
+                sink_type=row["sink_type"],
+                enabled=bool(row["enabled"]),
+                config=json.loads(row["config_json"]),
+            )
+            for row in rows
+        ]
+
+    def delete_output_route(self, route_id: int) -> None:
+        with self._connect() as conn:
+            conn.execute("DELETE FROM output_routes WHERE id = ?", (route_id,))
 
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.path)

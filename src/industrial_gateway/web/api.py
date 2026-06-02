@@ -29,12 +29,13 @@ def create_app(
     session_secret: str,
     admin_username: str = "admin",
     admin_password: str = "admin",
+    log_root: str | Path | None = None,
 ) -> FastAPI:
     store = ConfigStore(store_path)
     store.initialize()
     auth_settings = AuthSettings(admin_username, admin_password, session_secret)
     config_service = ConfigService(store)
-    runtime_manager = RuntimeManager(store)
+    runtime_manager = RuntimeManager(store, log_root=log_root)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -167,6 +168,23 @@ def create_app(
     def save_plugin(sink_type: str, payload: dict, _user: dict[str, str] = Depends(session_dependency)):
         return config_service.save_sink_config({"sink_type": sink_type, **payload})
 
+    @app.get("/api/plugin-routes")
+    def list_plugin_routes(_user: dict[str, str] = Depends(session_dependency)):
+        return config_service.list_output_routes()
+
+    @app.post("/api/plugin-routes")
+    def save_plugin_route(payload: dict, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.save_output_route(payload)
+
+    @app.put("/api/plugin-routes/{route_id}")
+    def update_plugin_route(route_id: int, payload: dict, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.save_output_route({"id": route_id, **payload})
+
+    @app.delete("/api/plugin-routes/{route_id}")
+    def delete_plugin_route(route_id: int, _user: dict[str, str] = Depends(session_dependency)):
+        config_service.delete_output_route(route_id)
+        return {"deleted": True}
+
     @app.post("/api/runtime/start")
     def start_runtime(payload: dict | None = None, _user: dict[str, str] = Depends(session_dependency)):
         health_interval = None if payload is None else payload.get("health_interval_s")
@@ -204,6 +222,8 @@ def create_app(
 
     static_dir = Path(__file__).parent / "static"
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    runtime_manager.start()
 
     @app.get("/")
     def index():

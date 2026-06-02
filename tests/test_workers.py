@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from queue import Queue
 
 from industrial_gateway.models import DeviceSpec, MqttConfig, ReadResult, TagResult
-from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, SinkPublisher
+from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, OutputRoute, SinkPublisher
 
 
 class FakeDriver:
@@ -81,6 +81,11 @@ class FailingSubscriptionDriver:
         return {"ok": True}
 
 
+class EmptyMessageSubscriptionDriver(FailingSubscriptionDriver):
+    def connect(self):
+        raise RuntimeError()
+
+
 def test_driver_poller_puts_read_result_on_queue():
     outbox = Queue()
     logs = Queue()
@@ -123,6 +128,7 @@ def test_driver_poller_logs_connect_or_read_failure():
     assert result.error == "connect boom"
     assert record["level"] == "ERROR"
     assert record["message"] == "driver read failed"
+    assert record["data"]["driver"] == "fake"
     assert record["data"]["error"] == "connect boom"
 
 
@@ -193,6 +199,57 @@ def test_sink_publisher_converts_results_to_batch_message():
     assert sink.messages[0].topic == "plant/press/data"
     assert sink.messages[0].payload["tags"][0]["value"] == 12.3
     assert logs.empty()
+
+
+def test_sink_publisher_uses_output_route_for_device_and_tag_group():
+    inbox = Queue()
+    default_sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="fake",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+            tags=[
+                TagResult(
+                    name="bar",
+                    address=2,
+                    value=12.3,
+                    quality="good",
+                    error=None,
+                    timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+                    tag_group="temp",
+                )
+            ],
+        )
+    )
+    publisher = SinkPublisher(
+        default_sink,
+        MqttConfig(base_topic="default"),
+        inbox,
+        output_routes=[
+            OutputRoute(
+                device_id=2,
+                tag_group="temp",
+                sink_type="mqtt",
+                mqtt_config=MqttConfig(base_topic="routed"),
+                topic="route/exact/current",
+            )
+        ],
+    )
+
+    publisher.publish_once()
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 1, tzinfo=timezone.utc))
+
+    assert default_sink.messages[0].topic == "route/exact/current"
+    assert default_sink.messages[0].use_message_topic is True
+    assert default_sink.messages[0].payload["tags"][0]["tag_group"] == "temp"
 
 
 def test_sink_publisher_emits_tag_update_status():
@@ -270,8 +327,36 @@ def test_sink_publisher_logs_bad_tag_result():
     record = logs.get_nowait()
     assert record["level"] == "ERROR"
     assert record["message"] == "tag read failed"
+    assert record["data"]["driver"] == "fake"
     assert record["data"]["tag"] == "bar"
     assert record["data"]["error"] == "read timeout"
+
+
+def test_sink_publisher_logs_plugin_type_on_sink_failure():
+    class FailingStartSink(FakeSink):
+        def start(self):
+            raise RuntimeError("refused")
+
+    inbox = Queue()
+    logs = Queue()
+    status = Queue()
+    publisher = SinkPublisher(
+        FailingStartSink(),
+        MqttConfig(base_topic="plant"),
+        inbox,
+        status_outbox=status,
+        log_queue=logs,
+        plugin_type="mqtt",
+    )
+
+    publisher.run()
+
+    record = logs.get_nowait()
+    assert status.get_nowait() == "plugin mqtt start failed: refused"
+    assert record["source"] == "plugin"
+    assert record["message"] == "sink start failed"
+    assert record["data"]["plugin"] == "mqtt"
+    assert record["data"]["error"] == "refused"
 
 
 def test_opcua_subscription_worker_logs_runtime_failure():
@@ -295,7 +380,33 @@ def test_opcua_subscription_worker_logs_runtime_failure():
     assert record["level"] == "INFO"
     record = logs.get_nowait()
     assert record["level"] == "ERROR"
-    assert record["message"] == "opcua subscription failed"
+    assert record["message"] == "subscription failed"
+
+
+def test_opcua_subscription_start_failure_logs_exception_details():
+    outbox = Queue()
+    logs = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="opc",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"mode": "subscription", "endpoint": "opc.tcp://127.0.0.1:4840"},
+    )
+    worker = OpcUaSubscriptionWorker(EmptyMessageSubscriptionDriver, device, [], outbox, log_queue=logs)
+
+    worker.run()
+
+    record = logs.get_nowait()
+    assert record["message"] == "subscription start failed"
+    assert record["data"]["error"] == ""
+    assert record["data"]["exception_type"] == "RuntimeError"
+    assert record["data"]["exception_repr"] == "RuntimeError()"
+    assert "test_workers.py" in record["data"]["traceback"]
+    assert "connect" in record["data"]["traceback"]
+    assert "D:\\" not in record["data"]["traceback"]
+    assert record["data"]["endpoint"] == "opc.tcp://127.0.0.1:4840"
 
 
 def test_sink_publisher_republishes_cached_values_without_new_results():

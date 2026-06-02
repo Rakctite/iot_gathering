@@ -196,7 +196,7 @@ def _decode_register_block(registers: list[int], block: _ReadBlock, timestamp: d
             value = _decode_registers(registers[offset : offset + count], tag)
             if isinstance(value, (int, float)):
                 value = value * tag.scale
-            results[tag.name] = TagResult(tag.name, tag.address, value, "good", None, timestamp)
+            results[tag.name] = TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             results[tag.name] = _bad(tag, timestamp, str(exc))
     return results
@@ -207,7 +207,7 @@ def _decode_bit_block(bits: list[bool], block: _ReadBlock, timestamp: datetime) 
     for tag in block.tags:
         offset = tag.address - block.start
         try:
-            results[tag.name] = TagResult(tag.name, tag.address, bool(bits[offset]), "good", None, timestamp)
+            results[tag.name] = TagResult(tag.name, tag.address, bool(bits[offset]), "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             results[tag.name] = _bad(tag, timestamp, str(exc))
     return results
@@ -278,4 +278,4 @@ def _decode_string(registers: list[int], tag: TagSpec) -> str:
 
 
 def _bad(tag: TagSpec, timestamp: datetime, error: str) -> TagResult:
-    return TagResult(tag.name, tag.address, None, "bad", error, timestamp)
+    return TagResult(tag.name, tag.address, None, "bad", error, timestamp, tag_group=tag.tag_group)

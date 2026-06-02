@@ -11,7 +11,7 @@ from industrial_gateway.config_schema import (
     tag_function_choices_for_driver,
     tag_type_choices_for_driver,
 )
-from industrial_gateway.models import DeviceSpec, SinkConfig, TagSpec
+from industrial_gateway.models import DeviceSpec, OutputRouteConfig, SinkConfig, TagSpec
 from industrial_gateway.store import ConfigStore
 
 
@@ -137,6 +137,37 @@ class ConfigService:
         sink_config = SinkConfig(sink_type=sink_type, enabled=bool(payload.get("enabled", True)), config=config)
         self.store.save_sink_config(sink_config)
         return self.get_sink_config(sink_type)
+
+    def list_output_routes(self) -> list[dict[str, Any]]:
+        devices = {device.id: device for device in self.store.list_devices()}
+        rows = []
+        for route in self.store.list_output_routes():
+            payload = _route_to_dict(route)
+            device = devices.get(route.device_id)
+            payload["device_name"] = device.name if device is not None else "All devices"
+            rows.append(payload)
+        return rows
+
+    def save_output_route(self, payload: dict[str, Any]) -> dict[str, Any]:
+        route_id = payload.get("id")
+        sink_type = "mqtt"
+        device_id_value = payload.get("device_id")
+        device_id = None if device_id_value in (None, "", "all") else int(device_id_value)
+        if device_id is not None:
+            self.get_device(device_id)
+        route = OutputRouteConfig(
+            id=None if route_id in (None, "") else int(route_id),
+            device_id=device_id,
+            tag_group=str(payload.get("tag_group", "")).strip(),
+            sink_type=sink_type,
+            enabled=bool(payload.get("enabled", True)),
+            config=_route_config(payload),
+        )
+        saved_id = self.store.save_output_route(route)
+        return next(route for route in self.list_output_routes() if route["id"] == saved_id)
+
+    def delete_output_route(self, route_id: int) -> None:
+        self.store.delete_output_route(route_id)
 
     def export_devices_csv(self) -> str:
         output = io.StringIO()
@@ -304,6 +335,23 @@ def _sink_to_dict(config: SinkConfig, selected: bool) -> dict[str, Any]:
         "config": config.config,
         "selected": selected,
     }
+
+
+def _route_to_dict(route: OutputRouteConfig) -> dict[str, Any]:
+    return {
+        "id": route.id,
+        "device_id": route.device_id,
+        "tag_group": route.tag_group,
+        "sink_type": route.sink_type,
+        "enabled": route.enabled,
+        "config": _route_config({"config": route.config}),
+    }
+
+
+def _route_config(payload: dict[str, Any]) -> dict[str, Any]:
+    config = payload.get("config") or {}
+    topic = str(config.get("topic") or payload.get("topic") or "").strip()
+    return {"topic": topic} if topic else {}
 
 
 def _csv_bool(value: Any, default: bool) -> bool:

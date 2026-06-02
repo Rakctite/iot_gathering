@@ -72,7 +72,16 @@ class OpcUaDriver:
             node = self.client.get_node(tag.node_id)
             value = self._run(node.read_value())
             value = _coerce_value(value, tag)
-            return TagResult(tag.name, tag.address, value, "good", None, timestamp, node_id=tag.node_id)
+            return TagResult(
+                tag.name,
+                tag.address,
+                value,
+                "good",
+                None,
+                timestamp,
+                node_id=tag.node_id,
+                tag_group=tag.tag_group,
+            )
         except Exception as exc:
             return _bad(tag, timestamp, str(exc))
 
@@ -108,7 +117,16 @@ class _OpcUaDataChangeHandler:
             return
         try:
             coerced = _coerce_value(value, tag)
-            tag_result = TagResult(tag.name, tag.address, coerced, "good", None, timestamp, node_id=tag.node_id)
+            tag_result = TagResult(
+                tag.name,
+                tag.address,
+                coerced,
+                "good",
+                None,
+                timestamp,
+                node_id=tag.node_id,
+                tag_group=tag.tag_group,
+            )
         except Exception as exc:
             tag_result = _bad(tag, timestamp, str(exc))
         from industrial_gateway.models import ReadResult
@@ -139,4 +157,4 @@ def _coerce_value(value: Any, tag: TagSpec) -> Any:
 
 
 def _bad(tag: TagSpec, timestamp: datetime, error: str) -> TagResult:
-    return TagResult(tag.name, tag.address, None, "bad", error, timestamp, node_id=tag.node_id)
+    return TagResult(tag.name, tag.address, None, "bad", error, timestamp, node_id=tag.node_id, tag_group=tag.tag_group)

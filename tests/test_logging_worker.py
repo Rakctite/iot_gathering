@@ -41,6 +41,24 @@ def test_async_log_worker_formats_records_without_timestamp():
     assert '"tag": "speed"' in line
 
 
+def test_async_log_worker_formats_driver_and_plugin_context():
+    display = Queue()
+    worker = AsyncLogWorker(display_queue=display)
+
+    worker.input_queue.put(
+        {"level": "ERROR", "source": "driver", "message": "read failed", "data": {"driver": "opcua"}}
+    )
+    worker.input_queue.put(
+        {"level": "ERROR", "source": "plugin", "message": "start failed", "data": {"plugin": "mqtt"}}
+    )
+
+    worker.drain_once()
+    worker.drain_once()
+
+    assert "[driver][opcua] read failed" in display.get_nowait()
+    assert "[plugin][mqtt] start failed" in display.get_nowait()
+
+
 def test_async_log_worker_writes_daily_log_file(tmp_path):
     display = Queue()
     worker = AsyncLogWorker(display_queue=display, log_dir=tmp_path)

@@ -1,4 +1,4 @@
-from industrial_gateway.models import SinkConfig
+from industrial_gateway.models import DeviceSpec, OutputRouteConfig, SinkConfig
 from industrial_gateway.store import ConfigStore
 
 
@@ -41,3 +41,34 @@ def test_sqlite_store_keeps_sink_config_per_plugin(tmp_path):
     assert mqtt.config["host"] == "broker"
     assert postgres.enabled is False
     assert postgres.config["host"] == "pg"
+
+
+def test_sqlite_store_round_trips_output_routes(tmp_path):
+    store = ConfigStore(tmp_path / "gateway.sqlite3")
+    store.initialize()
+    device_id = store.save_device(
+        DeviceSpec(
+            id=None,
+            name="line-1",
+            driver_type="modbus_tcp",
+            enabled=True,
+            poll_interval_ms=1000,
+            connection={"host": "127.0.0.1", "port": 502, "unit_id": 1},
+        )
+    )
+
+    route_id = store.save_output_route(
+        OutputRouteConfig(
+            device_id=device_id,
+            tag_group="temp",
+            sink_type="mqtt",
+            enabled=True,
+            config={"host": "broker", "base_topic": "route"},
+        )
+    )
+
+    route = store.list_output_routes()[0]
+    assert route.id == route_id
+    assert route.device_id == device_id
+    assert route.tag_group == "temp"
+    assert route.config["base_topic"] == "route"

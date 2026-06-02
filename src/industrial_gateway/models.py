@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-TagFunction = Literal["holding_register", "input_register", "coil", "discrete_input", "opcua_node"]
+TagFunction = Literal["holding_register", "input_register", "coil", "discrete_input", "opcua_node", "json_field"]
 TagDataType = Literal[
     "auto",
     "bool",
@@ -67,6 +67,16 @@ class SinkConfig:
 
 
 @dataclass(frozen=True)
+class OutputRouteConfig:
+    id: int | None = None
+    device_id: int | None = None
+    tag_group: str = ""
+    sink_type: str = "mqtt"
+    enabled: bool = True
+    config: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class TagResult:
     name: str
     address: int
@@ -75,6 +85,7 @@ class TagResult:
     error: str | None
     timestamp: datetime
     node_id: str | None = None
+    tag_group: str = ""
 
     def to_payload(self) -> dict[str, Any]:
         payload = {
@@ -87,6 +98,8 @@ class TagResult:
         }
         if self.node_id is not None:
             payload["node_id"] = self.node_id
+        if self.tag_group:
+            payload["tag_group"] = self.tag_group
         return payload
 
 
@@ -103,6 +116,7 @@ class BatchMessage:
     topic: str
     payload: dict[str, Any]
     qos: int = 0
+    use_message_topic: bool = False
 
     @classmethod
     def from_results(
@@ -146,9 +160,21 @@ def validate_opcua_tag(tag: TagSpec) -> None:
     _validate_common_tag_fields(tag)
 
 
+def validate_mqtt_tag(tag: TagSpec) -> None:
+    if not tag.name.strip():
+        raise ValueError("tag name is required")
+    if tag.function != "json_field":
+        raise ValueError(f"unsupported MQTT function: {tag.function}")
+    if not tag.node_id or not tag.node_id.strip():
+        raise ValueError("MQTT tag JSON field is required")
+    _validate_common_tag_fields(tag)
+
+
 def validate_tag(driver_type: str, tag: TagSpec) -> None:
     if driver_type == "opcua":
         validate_opcua_tag(tag)
+    elif driver_type == "mqtt":
+        validate_mqtt_tag(tag)
     else:
         validate_modbus_tag(tag)
 
@@ -171,7 +197,7 @@ def _validate_common_tag_fields(tag: TagSpec) -> None:
 def _iso(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    return value.isoformat()
+    return value.isoformat(timespec="milliseconds")
 
 
 def _topic_token(value: str) -> str:

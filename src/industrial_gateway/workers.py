@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import threading
 import time
+import traceback
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from queue import Empty, Queue
 from typing import Any, Callable, Protocol
 
@@ -28,6 +31,15 @@ class Sink(Protocol):
 
 
 DriverFactory = Callable[[DeviceSpec, list[TagSpec]], Driver]
+
+
+@dataclass
+class OutputRoute:
+    device_id: int | None
+    tag_group: str
+    sink_type: str
+    mqtt_config: MqttConfig
+    topic: str = ""
 
 
 class DriverPoller(threading.Thread):
@@ -74,12 +86,17 @@ class DriverPoller(threading.Thread):
             )
         except Exception as exc:
             self.outbox.put(ReadResult(self.device, timestamp, [], error=str(exc)))
-            self._log("ERROR", "driver", "driver read failed", {"device": self.device.name, "error": str(exc)})
+            self._log("ERROR", "driver", "driver read failed", {"device": self.device.name, **_exception_data(exc)})
         finally:
             try:
                 driver.disconnect()
             except Exception as exc:
-                self._log("ERROR", "driver", "driver disconnect failed", {"device": self.device.name, "error": str(exc)})
+                self._log(
+                    "ERROR",
+                    "driver",
+                    "driver disconnect failed",
+                    {"device": self.device.name, **_exception_data(exc)},
+                )
 
     def run(self) -> None:
         while not self._stop_event.is_set():
@@ -88,6 +105,8 @@ class DriverPoller(threading.Thread):
 
     def _log(self, level: str, source: str, message: str, data: dict[str, Any]) -> None:
         if self.log_queue is not None:
+            if source == "driver":
+                data = {**data, "driver": self.device.driver_type}
             self.log_queue.put({"level": level, "source": source, "message": message, "data": data})
 
 
@@ -110,7 +129,7 @@ class DriverPoller(threading.Thread):
                 "ERROR",
                 "driver",
                 "server health check failed",
-                {"device": self.device.name, "error": str(exc)},
+                {"device": self.device.name, **_exception_data(exc)},
             )
 
 
@@ -158,7 +177,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
         self.driver = self.driver_factory(self.device, self.tags)
         self.driver.connect()
         self.driver.start_subscription(self._emit_result)
-        self._log("INFO", "driver", "opcua subscription started", {"device": self.device.name})
+        self._log("INFO", "driver", "subscription started", {"device": self.device.name})
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -175,8 +194,8 @@ class OpcUaSubscriptionWorker(threading.Thread):
                     self._log(
                         "ERROR",
                         "driver",
-                        "opcua subscription failed",
-                        {"device": self.device.name, "error": str(exc)},
+                        "subscription failed",
+                        {"device": self.device.name, **_exception_data(exc)},
                     )
                     self._stop_event.set()
         except Exception as exc:
@@ -184,8 +203,13 @@ class OpcUaSubscriptionWorker(threading.Thread):
             self._log(
                 "ERROR",
                 "driver",
-                "opcua subscription start failed",
-                {"device": self.device.name, "error": str(exc)},
+                "subscription start failed",
+                {
+                    "device": self.device.name,
+                    "endpoint": self.device.connection.get("endpoint") or self.device.connection.get("url", ""),
+                    "mode": self.device.connection.get("mode", ""),
+                    **_exception_data(exc),
+                },
             )
         finally:
             if self.driver is not None:
@@ -195,8 +219,8 @@ class OpcUaSubscriptionWorker(threading.Thread):
                     self._log(
                         "ERROR",
                         "driver",
-                        "opcua subscription stop failed",
-                        {"device": self.device.name, "error": str(exc)},
+                        "subscription stop failed",
+                        {"device": self.device.name, **_exception_data(exc)},
                     )
                 try:
                     self.driver.disconnect()
@@ -204,8 +228,8 @@ class OpcUaSubscriptionWorker(threading.Thread):
                     self._log(
                         "ERROR",
                         "driver",
-                        "opcua subscription disconnect failed",
-                        {"device": self.device.name, "error": str(exc)},
+                        "subscription disconnect failed",
+                        {"device": self.device.name, **_exception_data(exc)},
                     )
 
     def _emit_result(self, result: ReadResult) -> None:
@@ -213,12 +237,14 @@ class OpcUaSubscriptionWorker(threading.Thread):
         self._log(
             "INFO",
             "driver",
-            "opcua subscription datachange",
+            "subscription datachange",
             {"device": result.device.name, "tags": [tag.to_payload() for tag in result.tags]},
         )
 
     def _log(self, level: str, source: str, message: str, data: dict[str, Any]) -> None:
         if self.log_queue is not None:
+            if source == "driver":
+                data = {**data, "driver": self.device.driver_type}
             self.log_queue.put({"level": level, "source": source, "message": message, "data": data})
 
 
@@ -241,7 +267,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
                 "ERROR",
                 "driver",
                 "server health check failed",
-                {"device": self.device.name, "error": str(exc)},
+                {"device": self.device.name, **_exception_data(exc)},
             )
 
 
@@ -254,6 +280,8 @@ class SinkPublisher(threading.Thread):
         status_outbox: Queue[Any] | None = None,
         log_queue: Queue[dict[str, Any]] | None = None,
         publish_interval_s: float = 1.0,
+        plugin_type: str = "mqtt",
+        output_routes: list[OutputRoute] | None = None,
     ) -> None:
         super().__init__(daemon=True)
         self.sink = sink
@@ -262,6 +290,8 @@ class SinkPublisher(threading.Thread):
         self.status_outbox = status_outbox
         self.log_queue = log_queue
         self.publish_interval_s = publish_interval_s
+        self.plugin_type = plugin_type
+        self.output_routes = output_routes or []
         self._latest: dict[tuple[str, str], dict[str, Any]] = {}
         self._stop_event = threading.Event()
 
@@ -275,7 +305,12 @@ class SinkPublisher(threading.Thread):
             return False
         if result.error:
             self._status(f"{result.device.name}: read failed: {result.error}")
-            self._log("ERROR", "driver", "read result error", {"device": result.device.name, "error": result.error})
+            self._log(
+                "ERROR",
+                "driver",
+                "read result error",
+                {"device": result.device.name, "driver": result.device.driver_type, "error": result.error},
+            )
             return True
         self._cache_result(result)
         return True
@@ -286,23 +321,34 @@ class SinkPublisher(threading.Thread):
             device = snapshot["device"]
             groups: dict[str | None, list[TagResult]] = {}
             for tag in snapshot["tags"].values():
-                groups.setdefault(_tag_topic_group(tag), []).append(tag)
+                groups.setdefault(_tag_output_group(tag), []).append(tag)
             for group, tags in groups.items():
                 if not tags:
                     continue
+                route = self._route_for(device, group or "")
+                mqtt_config = route.mqtt_config if route is not None else self.mqtt_config
                 message = BatchMessage.from_results(
                     device,
                     tags,
                     timestamp or datetime.now(timezone.utc),
-                    self.mqtt_config,
+                    mqtt_config,
                 )
-                if group:
+                if group and (route is None or route.tag_group != group):
                     message = BatchMessage(
                         topic=_topic_with_group(message.topic, group),
                         payload=message.payload,
                         qos=message.qos,
+                        use_message_topic=message.use_message_topic,
                     )
-                self._publish_message(message, device, len(tags))
+                plugin_type = route.sink_type if route is not None else self.plugin_type
+                if route is not None:
+                    message = BatchMessage(
+                        topic=route.topic or message.topic,
+                        payload=message.payload,
+                        qos=message.qos,
+                        use_message_topic=True,
+                    )
+                self._publish_message(self.sink, plugin_type, message, device, len(tags))
                 published += 1
         return published
 
@@ -325,6 +371,8 @@ class SinkPublisher(threading.Thread):
                     "tag read failed",
                     {
                         "device": result.device.name,
+                        "driver": result.device.driver_type,
+                        "tag_group": tag.tag_group,
                         "tag": tag.name,
                         "node_id": tag.node_id or "",
                         "quality": tag.quality,
@@ -335,6 +383,7 @@ class SinkPublisher(threading.Thread):
                 {
                     "type": "tag_update",
                     "device": result.device.name,
+                    "tag_group": tag.tag_group,
                     "tag": tag.name,
                     "node_id": tag.node_id or "",
                     "mode": _runtime_mode(result.device),
@@ -344,19 +393,31 @@ class SinkPublisher(threading.Thread):
                 }
             )
 
-    def _publish_message(self, message: BatchMessage, device: DeviceSpec, tag_count: int) -> None:
+    def _publish_message(
+        self,
+        sink: Sink,
+        plugin_type: str,
+        message: BatchMessage,
+        device: DeviceSpec,
+        tag_count: int,
+    ) -> None:
         try:
-            self.sink.publish_batch(message)
+            sink.publish_batch(message)
         except Exception as exc:
             self._status(f"{device.name}: publish failed: {exc}")
-            self._log("ERROR", "sink", "sink publish failed", {"device": device.name, "error": str(exc)})
+            self._log(
+                "ERROR",
+                "plugin",
+                "sink publish failed",
+                {"device": device.name, "plugin": plugin_type, **_exception_data(exc)},
+            )
 
     def run(self) -> None:
         try:
             self.sink.start()
         except Exception as exc:
-            self._status(f"sink start failed: {exc}")
-            self._log("ERROR", "sink", "sink start failed", {"error": str(exc)})
+            self._status(f"plugin {self.plugin_type} start failed: {exc}")
+            self._log("ERROR", "plugin", "sink start failed", _exception_data(exc))
             return
         next_publish = time.monotonic() + self.publish_interval_s
         try:
@@ -372,7 +433,7 @@ class SinkPublisher(threading.Thread):
             try:
                 self.sink.stop()
             except Exception as exc:
-                self._log("ERROR", "sink", "sink stop failed", {"error": str(exc)})
+                self._log("ERROR", "plugin", "sink stop failed", _exception_data(exc))
 
     def _status(self, message: Any) -> None:
         if self.status_outbox is not None:
@@ -380,7 +441,29 @@ class SinkPublisher(threading.Thread):
 
     def _log(self, level: str, source: str, message: str, data: dict[str, Any]) -> None:
         if self.log_queue is not None:
+            if source in {"sink", "plugin"}:
+                data = {"plugin": self.plugin_type, **data}
             self.log_queue.put({"level": level, "source": source, "message": message, "data": data})
+
+    def _route_for(self, device: DeviceSpec, tag_group: str) -> OutputRoute | None:
+        exact = [
+            route
+            for route in self.output_routes
+            if route.device_id == device.id and route.tag_group == tag_group
+        ]
+        if exact:
+            return exact[0]
+        device_default = [
+            route for route in self.output_routes if route.device_id == device.id and route.tag_group == ""
+        ]
+        if device_default:
+            return device_default[0]
+        group_default = [
+            route for route in self.output_routes if route.device_id is None and route.tag_group == tag_group
+        ]
+        if group_default:
+            return group_default[0]
+        return None
 
 
 def _device_key(device: DeviceSpec) -> tuple[str, str]:
@@ -391,6 +474,12 @@ def _device_key(device: DeviceSpec) -> tuple[str, str]:
 
 def _tag_key(tag: TagResult) -> str:
     return tag.node_id or f"{tag.name}:{tag.address}"
+
+
+def _tag_output_group(tag: TagResult) -> str | None:
+    if tag.tag_group:
+        return tag.tag_group
+    return _tag_topic_group(tag)
 
 
 def _tag_topic_group(tag: TagResult) -> str | None:
@@ -413,7 +502,7 @@ def _topic_with_group(topic: str, group: str) -> str:
 
 
 def _runtime_mode(device: DeviceSpec) -> str:
-    if device.driver_type == "opcua" and device.connection.get("mode") == "subscription":
+    if device.driver_type == "mqtt" or (device.driver_type == "opcua" and device.connection.get("mode") == "subscription"):
         return "Subscription"
     return "Polling"
 
@@ -426,3 +515,20 @@ def _server_status(device: DeviceSpec, status: str, error: str | None) -> dict[s
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "error": error,
     }
+
+
+def _exception_data(exc: Exception) -> dict[str, Any]:
+    return {
+        "error": str(exc),
+        "exception_type": type(exc).__name__,
+        "exception_repr": repr(exc),
+        "traceback": _compact_traceback(exc),
+    }
+
+
+def _compact_traceback(exc: Exception) -> str:
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return type(exc).__name__
+    parts = [f"{Path(frame.filename).name}:{frame.lineno} in {frame.name}" for frame in frames]
+    return " <- ".join(parts)
