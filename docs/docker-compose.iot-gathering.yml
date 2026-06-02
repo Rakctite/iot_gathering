@@ -1,0 +1,23 @@
+services:
+  iot_gathering:
+    image: ${REGISTRY:-203.228.107.184:5000}/btx/iot_gathering:${IOT_GATHERING_IMAGE_TAG:-1.0.0}
+    container_name: iot_gathering
+    restart: unless-stopped
+    environment:
+      - TZ=${TZ:-Asia/Jakarta}
+      - INDUSTRIAL_GATEWAY_HOST=0.0.0.0
+      - INDUSTRIAL_GATEWAY_PORT=50137
+      - INDUSTRIAL_GATEWAY_STORE=/opt/iot_gathering/gateway.sqlite3
+      - INDUSTRIAL_GATEWAY_LOG_ROOT=/opt/iot_gathering/industrial_gateway_log
+      - INDUSTRIAL_GATEWAY_ADMIN_USER=${IOT_GATHERING_ADMIN_USER:-admin}
+      - INDUSTRIAL_GATEWAY_ADMIN_PASSWORD=${IOT_GATHERING_ADMIN_PASSWORD:-admin}
+      - INDUSTRIAL_GATEWAY_SESSION_SECRET=${IOT_GATHERING_SESSION_SECRET:-change-me}
+    ports:
+      - "50137:50137"
+    volumes:
+      - ./iot_gathering:/opt/iot_gathering
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+      db:
+        condition: service_healthy

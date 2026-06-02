@@ -1,0 +1,11 @@
+.git
+.pytest_cache
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.sqlite3
+industrial_gateway_log
+dist
+build
+*.egg-info
