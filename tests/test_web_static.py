@@ -35,6 +35,7 @@ def test_runtime_tab_has_pagination_controls():
     assert "prevDevicePage" not in html
     assert "prevGroupPage" not in html
     assert "runtime-log-scroll" in html
+    assert "runtimeLogEnabled" in html
     assert "pluginRouteForm" in html
     assert "pluginRouteList" in html
     assert "pluginRouteEditor" in html
@@ -51,6 +52,8 @@ def test_runtime_tab_has_pagination_controls():
     assert "tagPageSize: 12" in script
     assert "runtimePageRows" in script
     assert "runtimePageSize: 12" in script
+    assert "runtime_log_enabled" in script
+    assert "runtimeLogEnabled.disabled" in script
     assert "runtimeDevicePage" not in script
     assert "runtimeGroupPage" not in script
     assert "grid-template-rows: minmax(0, 3fr) minmax(0, 1fr)" in styles

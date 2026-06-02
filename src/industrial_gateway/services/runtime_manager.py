@@ -40,6 +40,7 @@ class RuntimeManager:
         self.publisher: Any | None = None
         self.running = False
         self.health_interval_s = 10
+        self.runtime_log_enabled = True
         self.runtime_tags: dict[tuple[str, str], dict[str, Any]] = {}
         self.server_statuses: dict[str, dict[str, Any]] = {}
         self.logs: deque[str] = deque(maxlen=500)
@@ -54,12 +55,19 @@ class RuntimeManager:
         )
         self.logger.start()
 
-    def start(self, health_interval_s: int | None = None) -> dict[str, Any]:
+    def start(
+        self,
+        health_interval_s: int | None = None,
+        runtime_log_enabled: bool | None = None,
+    ) -> dict[str, Any]:
         with self._lock:
             if self.running:
                 return self.snapshot()
             if health_interval_s is not None:
                 self.health_interval_s = health_interval_s
+            if runtime_log_enabled is not None:
+                self.runtime_log_enabled = runtime_log_enabled
+            self.logger.set_runtime_log_enabled(self.runtime_log_enabled)
             self._clear_queue(self.result_queue)
             self._clear_queue(self.status_queue)
             self.runtime_tags = self._initial_runtime_tags()
@@ -161,6 +169,7 @@ class RuntimeManager:
             "running": self.running,
             "device_count": len(self.pollers) + len(self.subscription_workers),
             "health_interval_s": self.health_interval_s,
+            "runtime_log_enabled": self.runtime_log_enabled,
             "runtime_tags": list(self.runtime_tags.values()),
             "server_statuses": list(self.server_statuses.values()),
             "logs": list(self.logs),

@@ -188,7 +188,11 @@ def create_app(
     @app.post("/api/runtime/start")
     def start_runtime(payload: dict | None = None, _user: dict[str, str] = Depends(session_dependency)):
         health_interval = None if payload is None else payload.get("health_interval_s")
-        return runtime_manager.start(health_interval)
+        runtime_log_enabled = None if payload is None else payload.get("runtime_log_enabled")
+        return runtime_manager.start(
+            health_interval,
+            None if runtime_log_enabled is None else bool(runtime_log_enabled),
+        )
 
     @app.post("/api/runtime/stop")
     def stop_runtime(_user: dict[str, str] = Depends(session_dependency)):

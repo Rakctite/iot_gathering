@@ -61,11 +61,13 @@ def test_start_stop_are_idempotent(tmp_path):
         publisher_class=FakeWorker,
     )
 
-    first = manager.start()
+    first = manager.start(runtime_log_enabled=False)
     second = manager.start()
 
     assert first["running"] is True
+    assert first["runtime_log_enabled"] is False
     assert second["running"] is True
+    assert second["runtime_log_enabled"] is False
     assert FakeWorker.started == 2
 
     manager.stop()
@@ -73,6 +75,7 @@ def test_start_stop_are_idempotent(tmp_path):
 
     assert FakeWorker.stopped == 2
     assert manager.snapshot()["running"] is False
+    assert manager.snapshot()["runtime_log_enabled"] is False
 
     manager.shutdown()
 

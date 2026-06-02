@@ -13,6 +13,7 @@ class AsyncLogWorker(threading.Thread):
         self,
         display_queue: Queue[str],
         debug_enabled: bool = False,
+        runtime_log_enabled: bool = True,
         log_dir: str | Path | None = None,
         error_log_dir: str | Path | None = None,
         audit_log_dir: str | Path | None = None,
@@ -21,6 +22,7 @@ class AsyncLogWorker(threading.Thread):
         self.input_queue: Queue[dict[str, Any]] = Queue()
         self.display_queue = display_queue
         self.debug_enabled = debug_enabled
+        self.runtime_log_enabled = runtime_log_enabled
         self.log_dir = Path(log_dir) if log_dir is not None else None
         self.error_log_dir = Path(error_log_dir) if error_log_dir is not None else None
         self.audit_log_dir = Path(audit_log_dir) if audit_log_dir is not None else None
@@ -28,6 +30,9 @@ class AsyncLogWorker(threading.Thread):
 
     def set_debug_enabled(self, enabled: bool) -> None:
         self.debug_enabled = enabled
+
+    def set_runtime_log_enabled(self, enabled: bool) -> None:
+        self.runtime_log_enabled = enabled
 
     def log(self, level: str, source: str, message: str, data: dict[str, Any] | None = None) -> None:
         self.input_queue.put(
@@ -50,6 +55,8 @@ class AsyncLogWorker(threading.Thread):
             return False
         record = _normalize_record(record)
         if record["level"] == "DEBUG" and not self.debug_enabled:
+            return True
+        if not self.runtime_log_enabled and not _is_error_record(record):
             return True
         line = _format_record(record)
         self.display_queue.put(line)

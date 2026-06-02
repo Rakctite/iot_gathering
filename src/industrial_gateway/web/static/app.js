@@ -388,6 +388,9 @@ async function loadRuntime() {
 function renderRuntime(snapshot) {
   state.runtimeSnapshot = snapshot;
   document.getElementById("runtimeBadge").textContent = snapshot.running ? "Running" : "Stopped";
+  const runtimeLogEnabled = document.getElementById("runtimeLogEnabled");
+  runtimeLogEnabled.disabled = Boolean(snapshot.running);
+  runtimeLogEnabled.checked = snapshot.runtime_log_enabled !== false;
   const runtimeRows = runtimePageRows(snapshot.runtime_tags || []);
   document.getElementById("runtimeTags").innerHTML = runtimeRows.rows.map(row =>
     `<tr><td>${escapeHtml(row.device)}</td><td>${escapeHtml(row.tag_group || "")}</td><td>${escapeHtml(row.tag)}</td><td>${escapeHtml(row.mode)}</td><td>${escapeHtml(row.timestamp || "")}</td><td>${escapeHtml(row.error || row.quality)}</td></tr>`
@@ -563,7 +566,13 @@ document.getElementById("tagCsvFile").onchange = async event => {
     alert(error.message || "Tag CSV import failed");
   }
 };
-document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", { method: "POST", body: JSON.stringify({ health_interval_s: Number(document.getElementById("healthInterval").value) }) }));
+document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", {
+  method: "POST",
+  body: JSON.stringify({
+    health_interval_s: Number(document.getElementById("healthInterval").value),
+    runtime_log_enabled: document.getElementById("runtimeLogEnabled").checked
+  })
+}));
 document.getElementById("stopRuntime").onclick = async () => renderRuntime(await api("/api/runtime/stop", { method: "POST" }));
 document.getElementById("prevTagPage").onclick = () => turnRuntimePage("tag", -1);
 document.getElementById("nextTagPage").onclick = () => turnRuntimePage("tag", 1);

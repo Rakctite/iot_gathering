@@ -27,6 +27,46 @@ def test_async_log_worker_hides_debug_messages_when_debug_disabled():
     assert display.empty()
 
 
+def test_async_log_worker_can_suppress_runtime_logs_but_keep_errors(tmp_path):
+    display = Queue()
+    worker = AsyncLogWorker(
+        display_queue=display,
+        runtime_log_enabled=False,
+        log_dir=tmp_path / "runtime",
+        error_log_dir=tmp_path / "error",
+    )
+
+    worker.input_queue.put(
+        {
+            "timestamp": "2026-05-19T01:02:03+00:00",
+            "level": "INFO",
+            "source": "driver",
+            "message": "subscription datachange",
+            "data": {"device": "rollgap"},
+        }
+    )
+    worker.input_queue.put(
+        {
+            "timestamp": "2026-05-19T01:02:04+00:00",
+            "level": "ERROR",
+            "source": "driver",
+            "message": "tag read failed",
+            "data": {"device": "rollgap", "error": "missing"},
+        }
+    )
+
+    worker.drain_once()
+    worker.drain_once()
+
+    line = display.get_nowait()
+    assert "tag read failed" in line
+    runtime_path = tmp_path / "runtime" / "industrial_gateway_2026-05-19.log"
+    error_path = tmp_path / "error" / "industrial_gateway_error_2026-05-19.log"
+    assert "subscription datachange" not in runtime_path.read_text(encoding="utf-8")
+    assert "tag read failed" in runtime_path.read_text(encoding="utf-8")
+    assert "tag read failed" in error_path.read_text(encoding="utf-8")
+
+
 def test_async_log_worker_formats_records_without_timestamp():
     display = Queue()
     worker = AsyncLogWorker(display_queue=display)
