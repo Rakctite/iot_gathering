@@ -161,7 +161,7 @@ def _field_value(payload: dict[str, Any], field: str) -> Any:
 
 def _coerce_value(value: Any, tag: TagSpec) -> Any:
     if tag.data_type == "auto":
-        return value
+        return _auto_value(value)
     if tag.data_type == "string":
         return str(value)
     if tag.data_type == "bool":
@@ -171,6 +171,20 @@ def _coerce_value(value: Any, tag: TagSpec) -> Any:
     if tag.data_type in {"float32", "float64"}:
         return float(value) * tag.scale
     return value
+
+
+def _auto_value(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.strip()
+    if not text:
+        return value
+    try:
+        if any(marker in text for marker in (".", "e", "E")):
+            return float(text)
+        return int(text)
+    except ValueError:
+        return value
 
 
 def _bad(tag: TagSpec, timestamp: datetime, error: str) -> TagResult:

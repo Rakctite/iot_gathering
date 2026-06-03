@@ -81,6 +81,43 @@ def test_mqtt_input_driver_marks_missing_fields_bad():
     assert emitted[0].tags[0].error == "'r'"
 
 
+def test_mqtt_input_driver_auto_converts_numeric_strings():
+    device = DeviceSpec(
+        id=1,
+        name="ipriot",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"topic_filter": "ipriot/+/data"},
+    )
+    tags = [
+        TagSpec(name="temperature", address=0, function="json_field", data_type="auto", node_id="temperature"),
+        TagSpec(name="left", address=0, function="json_field", data_type="auto", node_id="left"),
+        TagSpec(name="din1", address=0, function="json_field", data_type="auto", node_id="din1"),
+        TagSpec(name="sensor_id", address=0, function="json_field", data_type="auto", node_id="sensor_id"),
+    ]
+    driver = MqttInputDriver(device, tags)
+    driver.client = FakeMqttClient()
+    emitted = []
+
+    driver.start_subscription(lambda result: emitted.append(result))
+    driver._on_message(
+        None,
+        None,
+        SimpleNamespace(
+            topic="ipriot/mac/data",
+            payload=(
+                b'{"sensor_id":"IPRIOT-A201","temperature":"76.5",'
+                b'"left":"0.4835249999999981","din1":"0"}'
+            ),
+        ),
+    )
+
+    values = [tag.value for tag in emitted[0].tags]
+    assert values == [76.5, 0.4835249999999981, 0, "IPRIOT-A201"]
+    assert [type(value) for value in values] == [float, float, int, str]
+
+
 def test_mqtt_input_driver_client_id_is_unique_per_device():
     first = DeviceSpec(
         id=3,
