@@ -160,6 +160,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
         log_queue: Queue[dict[str, Any]] | None = None,
         status_outbox: Queue[Any] | None = None,
         health_interval_s: float = 10.0,
+        retry_interval_s: float = 10.0,
     ) -> None:
         super().__init__(daemon=True)
         self.driver_factory = driver_factory
@@ -169,68 +170,90 @@ class OpcUaSubscriptionWorker(threading.Thread):
         self.log_queue = log_queue
         self.status_outbox = status_outbox
         self.health_interval_s = health_interval_s
+        self.retry_interval_s = retry_interval_s
         self._last_health_check = 0.0
         self._stop_event = threading.Event()
         self.driver: SubscriptionDriver | None = None
+        self._subscription_started = False
 
     def start_once(self) -> None:
         self.driver = self.driver_factory(self.device, self.tags)
         self.driver.connect()
         self.driver.start_subscription(self._emit_result)
+        self._subscription_started = True
         self._log("INFO", "driver", "subscription started", {"device": self.device.name})
 
     def stop(self) -> None:
         self._stop_event.set()
 
     def run(self) -> None:
+        while not self._stop_event.is_set():
+            self.driver = None
+            self._subscription_started = False
+            try:
+                self.start_once()
+                while not self._stop_event.is_set():
+                    try:
+                        self.driver.run_subscription_once(0.2)
+                        self._check_server_status()
+                    except Exception as exc:
+                        self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
+                        self._log(
+                            "ERROR",
+                            "driver",
+                            "subscription failed",
+                            {"device": self.device.name, **_exception_data(exc)},
+                        )
+                        break
+            except Exception as exc:
+                self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
+                self._log(
+                    "ERROR",
+                    "driver",
+                    "subscription start failed",
+                    {
+                        "device": self.device.name,
+                        **_subscription_connection_data(self.device),
+                        **_exception_data(exc),
+                    },
+                )
+            finally:
+                self._cleanup_driver()
+            if not self._stop_event.is_set():
+                self._log(
+                    "INFO",
+                    "driver",
+                    "subscription retrying",
+                    {
+                        "device": self.device.name,
+                        **_subscription_connection_data(self.device),
+                        "retry_after_s": self.retry_interval_s,
+                    },
+                )
+                self._stop_event.wait(self.retry_interval_s)
+
+    def _cleanup_driver(self) -> None:
+        if self.driver is None:
+            return
+        if self._subscription_started:
+            try:
+                self.driver.stop_subscription()
+            except Exception as exc:
+                self._log(
+                    "ERROR",
+                    "driver",
+                    "subscription stop failed",
+                    {"device": self.device.name, **_exception_data(exc)},
+                )
         try:
-            self.start_once()
-            while not self._stop_event.is_set():
-                try:
-                    self.driver.run_subscription_once(0.2)
-                    self._check_server_status()
-                except Exception as exc:
-                    self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
-                    self._log(
-                        "ERROR",
-                        "driver",
-                        "subscription failed",
-                        {"device": self.device.name, **_exception_data(exc)},
-                    )
-                    self._stop_event.set()
+            self.driver.disconnect()
         except Exception as exc:
-            self.outbox.put(ReadResult(self.device, datetime.now(timezone.utc), [], error=str(exc)))
             self._log(
                 "ERROR",
                 "driver",
-                "subscription start failed",
-                {
-                    "device": self.device.name,
-                    "endpoint": self.device.connection.get("endpoint") or self.device.connection.get("url", ""),
-                    "mode": self.device.connection.get("mode", ""),
-                    **_exception_data(exc),
-                },
+                "subscription disconnect failed",
+                {"device": self.device.name, **_exception_data(exc)},
             )
-        finally:
-            if self.driver is not None:
-                try:
-                    self.driver.stop_subscription()
-                except Exception as exc:
-                    self._log(
-                        "ERROR",
-                        "driver",
-                        "subscription stop failed",
-                        {"device": self.device.name, **_exception_data(exc)},
-                    )
-                try:
-                    self.driver.disconnect()
-                except Exception as exc:
-                    self._log(
-                        "ERROR",
-                        "driver",
-                        "subscription disconnect failed",
-                        {"device": self.device.name, **_exception_data(exc)},
-                    )
 
     def _emit_result(self, result: ReadResult) -> None:
         self.outbox.put(result)
@@ -514,6 +537,19 @@ def _server_status(device: DeviceSpec, status: str, error: str | None) -> dict[s
         "status": status,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "error": error,
+    }
+
+
+def _subscription_connection_data(device: DeviceSpec) -> dict[str, Any]:
+    if device.driver_type == "mqtt":
+        return {
+            "host": device.connection.get("host") or "localhost",
+            "port": int(device.connection.get("port") or 1883),
+            "topic_filter": device.connection.get("topic_filter") or "",
+        }
+    return {
+        "endpoint": device.connection.get("endpoint") or device.connection.get("url", ""),
+        "mode": device.connection.get("mode", ""),
     }
 
 

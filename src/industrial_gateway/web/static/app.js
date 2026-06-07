@@ -15,6 +15,7 @@ const state = {
   runtimeSnapshot: { running: false, runtime_tags: [], logs: [] },
   runtimeTagPage: 0,
   runtimePageSize: 12,
+  runtimeRenderScheduled: false,
   ws: null
 };
 
@@ -352,6 +353,19 @@ async function importTagsCsv(file) {
   await loadTags();
 }
 
+async function importPluginsCsv(file) {
+  if (!file) return;
+  await uploadCsv("/api/plugins/import", file);
+  await loadPlugin();
+  await loadPluginRoutes();
+}
+
+async function importPluginRoutesCsv(file) {
+  if (!file) return;
+  await uploadCsv("/api/plugin-routes/import", file);
+  await loadPluginRoutes();
+}
+
 async function loadPlugin() {
   const plugin = await api(`/api/plugins/${state.selectedPlugin}`);
   const form = document.getElementById("pluginForm");
@@ -397,6 +411,60 @@ function renderRuntime(snapshot) {
   ).join("");
   document.getElementById("logs").textContent = (snapshot.logs || []).join("\n");
   renderRuntimePageLabels(runtimeRows);
+}
+
+function applyRuntimeEvent(message) {
+  if (message.type === "log") {
+    const logs = [...(state.runtimeSnapshot.logs || []), message.message].slice(-500);
+    state.runtimeSnapshot = { ...state.runtimeSnapshot, logs };
+    scheduleRuntimeRender();
+    return;
+  }
+  if (message.type === "tag_update") {
+    upsertRuntimeTag(message);
+    scheduleRuntimeRender();
+    return;
+  }
+  if (message.type === "server_status") {
+    upsertServerStatus(message);
+    scheduleRuntimeRender();
+  }
+}
+
+function scheduleRuntimeRender() {
+  if (state.runtimeRenderScheduled) return;
+  state.runtimeRenderScheduled = true;
+  requestAnimationFrame(() => {
+    state.runtimeRenderScheduled = false;
+    renderRuntime(state.runtimeSnapshot);
+  });
+}
+
+function upsertRuntimeTag(update) {
+  const rows = [...(state.runtimeSnapshot.runtime_tags || [])];
+  const key = runtimeTagKey(update);
+  const index = rows.findIndex(row => runtimeTagKey(row) === key);
+  if (index >= 0) {
+    rows[index] = { ...rows[index], ...update };
+  } else {
+    rows.push(update);
+  }
+  state.runtimeSnapshot = { ...state.runtimeSnapshot, runtime_tags: rows };
+}
+
+function runtimeTagKey(row) {
+  return `${row.device || ""}\u0000${row.node_id || row.tag || ""}`;
+}
+
+function upsertServerStatus(update) {
+  const rows = [...(state.runtimeSnapshot.server_statuses || [])];
+  const index = rows.findIndex(row => row.device === update.device);
+  if (index >= 0) {
+    rows[index] = { ...rows[index], ...update };
+  } else {
+    rows.push(update);
+  }
+  state.runtimeSnapshot = { ...state.runtimeSnapshot, server_statuses: rows };
 }
 
 function runtimePageRows(rows) {
@@ -527,7 +595,7 @@ function connectRuntimeEvents() {
   state.ws.onmessage = event => {
     const message = JSON.parse(event.data);
     if (message.type === "snapshot") renderRuntime(message.payload);
-    if (message.type === "log" || message.type === "tag_update" || message.type === "server_status") loadRuntime();
+    else applyRuntimeEvent(message);
   };
 }
 
@@ -554,6 +622,10 @@ document.getElementById("exportTags").onclick = () => {
   if (!state.selectedDevice) return;
   downloadCsv(`/api/devices/${state.selectedDevice.id}/tags.csv`);
 };
+document.getElementById("importPlugins").onclick = () => document.getElementById("pluginCsvFile").click();
+document.getElementById("exportPlugins").onclick = () => downloadCsv("/api/plugins.csv");
+document.getElementById("importPluginRoutes").onclick = () => document.getElementById("pluginRouteCsvFile").click();
+document.getElementById("exportPluginRoutes").onclick = () => downloadCsv("/api/plugin-routes.csv");
 document.getElementById("prevTagGroupPage").onclick = () => turnTagPage("group", -1);
 document.getElementById("nextTagGroupPage").onclick = () => turnTagPage("group", 1);
 document.getElementById("prevTagListPage").onclick = () => turnTagPage("tag", -1);
@@ -564,6 +636,22 @@ document.getElementById("tagCsvFile").onchange = async event => {
     event.target.value = "";
   } catch (error) {
     alert(error.message || "Tag CSV import failed");
+  }
+};
+document.getElementById("pluginCsvFile").onchange = async event => {
+  try {
+    await importPluginsCsv(event.target.files[0]);
+    event.target.value = "";
+  } catch (error) {
+    alert(error.message || "Plugin CSV import failed");
+  }
+};
+document.getElementById("pluginRouteCsvFile").onchange = async event => {
+  try {
+    await importPluginRoutesCsv(event.target.files[0]);
+    event.target.value = "";
+  } catch (error) {
+    alert(error.message || "Plugin route CSV import failed");
   }
 };
 document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", {

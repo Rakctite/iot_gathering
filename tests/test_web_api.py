@@ -183,3 +183,87 @@ def test_tag_csv_import_and_export(tmp_path):
     assert exported.status_code == 200
     assert "bar" in exported.text
     assert "ns=2;s=Machine.Bar" in exported.text
+
+
+def test_plugin_csv_import_and_export(tmp_path):
+    client = make_client(tmp_path)
+    csv_text = "\n".join(
+        [
+            "sink_type,selected,enabled,host,port,base_topic,username,password,client_id,qos,dynamic_topic_enabled,mac_address",
+            "mqtt,1,1,broker,1883,plant,user,secret,gw,1,1,AA:BB",
+            "",
+        ]
+    )
+
+    imported = client.post("/api/plugins/import", content=csv_text, headers={"Content-Type": "text/csv"})
+
+    assert imported.status_code == 200
+    assert imported.json() == {"plugins": 1, "routes": 0}
+    plugin = client.get("/api/plugins/mqtt").json()
+    assert plugin["config"]["host"] == "broker"
+    assert plugin["config"]["dynamic_topic_enabled"] is True
+
+    exported = client.get("/api/plugins.csv")
+
+    assert exported.status_code == 200
+    assert "text/csv" in exported.headers["content-type"]
+    assert "broker" in exported.text
+    assert "AA:BB" in exported.text
+
+    device = client.post(
+        "/api/devices",
+        json={
+            "device_group": "line",
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        },
+    ).json()
+    client.post(
+        "/api/plugin-routes",
+        json={"device_id": device["id"], "tag_group": "PHH01", "enabled": True, "config": {"topic": "plant/opc/PHH01/data"}},
+    )
+
+    exported_with_route = client.get("/api/plugins.csv")
+
+    assert "route" in exported_with_route.text
+    assert "PHH01" in exported_with_route.text
+    assert "plant/opc/PHH01/data" in exported_with_route.text
+
+
+def test_plugin_route_csv_import_and_export(tmp_path):
+    client = make_client(tmp_path)
+    device = client.post(
+        "/api/devices",
+        json={
+            "device_group": "line",
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        },
+    ).json()
+    csv_text = "\n".join(
+        [
+            "device_group,device_name,tag_group,sink_type,enabled,topic",
+            "line,opc,PHH01,mqtt,1,plant/opc/PHH01/data",
+            "",
+        ]
+    )
+
+    imported = client.post("/api/plugin-routes/import", content=csv_text, headers={"Content-Type": "text/csv"})
+
+    assert imported.status_code == 200
+    assert imported.json() == {"routes": 1}
+    route = client.get("/api/plugin-routes").json()[0]
+    assert route["device_id"] == device["id"]
+    assert route["config"] == {"topic": "plant/opc/PHH01/data"}
+
+    exported = client.get("/api/plugin-routes.csv")
+
+    assert exported.status_code == 200
+    assert "PHH01" in exported.text
+    assert "plant/opc/PHH01/data" in exported.text

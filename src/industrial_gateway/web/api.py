@@ -160,6 +160,18 @@ def create_app(
     def list_plugins(_user: dict[str, str] = Depends(session_dependency)):
         return config_service.list_sink_configs()
 
+    @app.get("/api/plugins.csv")
+    def export_plugins_csv(_user: dict[str, str] = Depends(session_dependency)):
+        return Response(
+            config_service.export_plugins_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="plugins.csv"'},
+        )
+
+    @app.post("/api/plugins/import")
+    async def import_plugins_csv(request: Request, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.import_plugins_csv((await request.body()).decode("utf-8-sig"))
+
     @app.get("/api/plugins/{sink_type}")
     def get_plugin(sink_type: str, _user: dict[str, str] = Depends(session_dependency)):
         return config_service.get_sink_config(sink_type)
@@ -171,6 +183,18 @@ def create_app(
     @app.get("/api/plugin-routes")
     def list_plugin_routes(_user: dict[str, str] = Depends(session_dependency)):
         return config_service.list_output_routes()
+
+    @app.get("/api/plugin-routes.csv")
+    def export_plugin_routes_csv(_user: dict[str, str] = Depends(session_dependency)):
+        return Response(
+            config_service.export_plugin_routes_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="plugin-routes.csv"'},
+        )
+
+    @app.post("/api/plugin-routes/import")
+    async def import_plugin_routes_csv(request: Request, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.import_plugin_routes_csv((await request.body()).decode("utf-8-sig"))
 
     @app.post("/api/plugin-routes")
     def save_plugin_route(payload: dict, _user: dict[str, str] = Depends(session_dependency)):

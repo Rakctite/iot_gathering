@@ -63,9 +63,15 @@
           <div class="plugin-layout">
             <div class="plugin-settings">
               <h2>Output Plugin</h2>
+              <button id="importPlugins" type="button">Import CSV</button>
+              <button id="exportPlugins" type="button">Export CSV</button>
+              <input id="pluginCsvFile" type="file" accept=".csv,text/csv" hidden>
               <form id="pluginForm" class="panel"></form>
               <div id="pluginRouteEditor">
                 <h2>Output Routes</h2>
+                <button id="importPluginRoutes" type="button">Import CSV</button>
+                <button id="exportPluginRoutes" type="button">Export CSV</button>
+                <input id="pluginRouteCsvFile" type="file" accept=".csv,text/csv" hidden>
                 <form id="pluginRouteForm" class="panel"></form>
               </div>
             </div>

@@ -40,10 +40,20 @@ def test_runtime_tab_has_pagination_controls():
     assert "pluginRouteList" in html
     assert "pluginRouteEditor" in html
     assert "pluginRouteListPanel" in html
+    assert "importPlugins" in html
+    assert "exportPlugins" in html
+    assert "pluginCsvFile" in html
+    assert "importPluginRoutes" in html
+    assert "exportPluginRoutes" in html
+    assert "pluginRouteCsvFile" in html
     assert "tagPageRows" in script
     assert "deleteDevice" in script
     assert "deleteTag" in script
     assert "savePluginRoute" in script
+    assert "importPluginsCsv" in script
+    assert "importPluginRoutesCsv" in script
+    assert "/api/plugins.csv" in script
+    assert "/api/plugin-routes.csv" in script
     assert "renderPluginRouteVisibility" in script
     assert 'sink_type: "mqtt"' in script
     assert "pluginRouteFields" not in script
@@ -68,3 +78,13 @@ def test_runtime_tab_has_pagination_controls():
     assert "body { margin: 0; font-family: Segoe UI, Arial, sans-serif; color: #172026; background: #f4f6f8; overflow-x: hidden; }" in styles
     assert ".runtime-grid { width: 100%; max-width: calc(100vw - 36px)" in styles
     assert ".runtime-tags-panel, .runtime-log-panel { min-height: 0; min-width: 0; max-width: 100%; overflow: hidden;" in styles
+
+
+def test_runtime_events_update_local_state_without_refetching_status():
+    script = (Path(__file__).parents[1] / "src" / "industrial_gateway" / "web" / "static" / "app.js").read_text()
+
+    assert "applyRuntimeEvent(message)" in script
+    assert "function upsertRuntimeTag" in script
+    assert "function scheduleRuntimeRender" in script
+    assert "requestAnimationFrame" in script
+    assert 'if (message.type === "log" || message.type === "tag_update" || message.type === "server_status") loadRuntime();' not in script

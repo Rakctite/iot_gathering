@@ -8,6 +8,7 @@ from industrial_gateway.config_schema import (
     connection_fields_for_driver,
     normalize_connection_for_driver,
     normalize_plugin_config,
+    plugin_fields,
     tag_function_choices_for_driver,
     tag_type_choices_for_driver,
 )
@@ -49,6 +50,14 @@ _DEVICE_CSV_FIELDS = [
     "endpoint",
     "mode",
     "subscription_interval_ms",
+    "topic_filter",
+    "client_id",
+    "username",
+    "password",
+    "qos",
+    "topic_mac_index",
+    "timestamp_field",
+    "sensor_id_field",
     "tag_group",
     "tag_name",
     "node_id",
@@ -60,6 +69,42 @@ _DEVICE_CSV_FIELDS = [
     "word_count",
     "byte_order",
     "word_order",
+]
+
+_PLUGIN_CSV_FIELDS = [
+    "record_type",
+    "sink_type",
+    "selected",
+    "enabled",
+    "device_group",
+    "device_name",
+    "tag_group",
+    "topic",
+    "host",
+    "port",
+    "base_topic",
+    "username",
+    "password",
+    "client_id",
+    "qos",
+    "dynamic_topic_enabled",
+    "mac_address",
+    "database",
+    "table",
+    "auto_create",
+    "server",
+    "driver",
+    "trust_server_certificate",
+]
+
+_PLUGIN_ROUTE_CSV_FIELDS = [
+    "record_type",
+    "device_group",
+    "device_name",
+    "tag_group",
+    "sink_type",
+    "enabled",
+    "topic",
 ]
 
 
@@ -138,6 +183,53 @@ class ConfigService:
         self.store.save_sink_config(sink_config)
         return self.get_sink_config(sink_type)
 
+    def export_plugins_csv(self) -> str:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=_PLUGIN_CSV_FIELDS, lineterminator="\n")
+        writer.writeheader()
+        selected = self.store.get_selected_sink_type()
+        configs = {config.sink_type: config for config in self.store.list_sink_configs()}
+        configs.setdefault(selected, self.store.get_sink_config(selected))
+        for config in configs.values():
+            writer.writerow(_plugin_csv_row(config, config.sink_type == selected))
+        devices = {device.id: device for device in self.store.list_devices()}
+        for route in self.store.list_output_routes():
+            writer.writerow(_plugin_route_csv_row(route, devices.get(route.device_id)))
+        return output.getvalue()
+
+    def import_plugins_csv(self, csv_text: str) -> dict[str, int]:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        if reader.fieldnames is None:
+            raise ValueError("CSV header is required")
+        imported_plugins = 0
+        imported_routes = 0
+        selected_config: SinkConfig | None = None
+        devices_by_key = {_device_import_key(device): device for device in self.store.list_devices()}
+        existing_routes = self.store.list_output_routes()
+        for row in reader:
+            record_type = (row.get("record_type") or "plugin").strip().lower()
+            if record_type == "route":
+                route_id = self._import_plugin_route_row(row, devices_by_key, existing_routes)
+                existing_routes = [
+                    *[item for item in existing_routes if item.id != route_id],
+                    *_route_by_id(self.store.list_output_routes(), route_id),
+                ]
+                imported_routes += 1
+                continue
+            sink_type = (row.get("sink_type") or "mqtt").strip()
+            config = SinkConfig(
+                sink_type=sink_type,
+                enabled=_csv_bool(row.get("enabled"), True),
+                config=_csv_plugin_config(sink_type, row),
+            )
+            self.store.save_sink_config(config)
+            if _csv_bool(row.get("selected"), False):
+                selected_config = config
+            imported_plugins += 1
+        if selected_config is not None:
+            self.store.save_sink_config(selected_config)
+        return {"plugins": imported_plugins, "routes": imported_routes}
+
     def list_output_routes(self) -> list[dict[str, Any]]:
         devices = {device.id: device for device in self.store.list_devices()}
         rows = []
@@ -168,6 +260,49 @@ class ConfigService:
 
     def delete_output_route(self, route_id: int) -> None:
         self.store.delete_output_route(route_id)
+
+    def export_plugin_routes_csv(self) -> str:
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=_PLUGIN_ROUTE_CSV_FIELDS, lineterminator="\n")
+        writer.writeheader()
+        devices = {device.id: device for device in self.store.list_devices()}
+        for route in self.store.list_output_routes():
+            writer.writerow(_plugin_route_csv_row(route, devices.get(route.device_id)))
+        return output.getvalue()
+
+    def import_plugin_routes_csv(self, csv_text: str) -> dict[str, int]:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        if reader.fieldnames is None:
+            raise ValueError("CSV header is required")
+        imported = 0
+        devices_by_key = {_device_import_key(device): device for device in self.store.list_devices()}
+        existing_routes = self.store.list_output_routes()
+        for row in reader:
+            route_id = self._import_plugin_route_row(row, devices_by_key, existing_routes)
+            existing_routes = [
+                *[item for item in existing_routes if item.id != route_id],
+                *_route_by_id(self.store.list_output_routes(), route_id),
+            ]
+            imported += 1
+        return {"routes": imported}
+
+    def _import_plugin_route_row(
+        self,
+        row: dict[str, Any],
+        devices_by_key: dict[tuple[str, str], DeviceSpec],
+        existing_routes: list[OutputRouteConfig],
+    ) -> int:
+        sink_type = (row.get("sink_type") or "mqtt").strip()
+        device_id = _csv_route_device_id(row, devices_by_key)
+        route = OutputRouteConfig(
+            id=_existing_route_id(existing_routes, device_id, (row.get("tag_group") or "").strip(), sink_type),
+            device_id=device_id,
+            tag_group=(row.get("tag_group") or "").strip(),
+            sink_type=sink_type,
+            enabled=_csv_bool(row.get("enabled"), True),
+            config=_route_config({"topic": row.get("topic") or ""}),
+        )
+        return self.store.save_output_route(route)
 
     def export_devices_csv(self) -> str:
         output = io.StringIO()
@@ -383,6 +518,23 @@ def _csv_connection_value(kind: str, value: Any) -> Any:
     return str(value)
 
 
+def _csv_plugin_config(sink_type: str, row: dict[str, Any]) -> dict[str, Any]:
+    values = {}
+    for field in plugin_fields(sink_type):
+        value = row.get(field.key)
+        if value is not None and str(value).strip() != "":
+            values[field.key] = _csv_plugin_value(field.kind, value)
+    return normalize_plugin_config(sink_type, values)
+
+
+def _csv_plugin_value(kind: str, value: Any) -> Any:
+    if kind == "int":
+        return int(value)
+    if kind == "bool":
+        return _csv_bool(value, False)
+    return str(value)
+
+
 def _tag_from_csv_row(row: dict[str, Any], driver_type: str, tag_name_key: str) -> TagSpec:
     name = (row.get(tag_name_key) or "").strip()
     if not name:
@@ -405,6 +557,34 @@ def _tag_from_csv_row(row: dict[str, Any], driver_type: str, tag_name_key: str) 
 
 def _device_import_key(device: DeviceSpec) -> tuple[str, str]:
     return (device.device_group, device.name)
+
+
+def _csv_route_device_id(row: dict[str, Any], devices_by_key: dict[tuple[str, str], DeviceSpec]) -> int | None:
+    device_name = (row.get("device_name") or "").strip()
+    if not device_name:
+        return None
+    device_group = (row.get("device_group") or "").strip()
+    device = devices_by_key.get((device_group, device_name))
+    if device is None:
+        group = device_group or "default"
+        raise ValueError(f"route device '{device_name}' in group '{group}' does not exist")
+    return device.id
+
+
+def _existing_route_id(
+    routes: list[OutputRouteConfig],
+    device_id: int | None,
+    tag_group: str,
+    sink_type: str,
+) -> int | None:
+    for route in routes:
+        if route.device_id == device_id and route.tag_group == tag_group and route.sink_type == sink_type:
+            return route.id
+    return None
+
+
+def _route_by_id(routes: list[OutputRouteConfig], route_id: int) -> list[OutputRouteConfig]:
+    return [route for route in routes if route.id == route_id]
 
 
 def _validate_same_device_config(existing: DeviceSpec, imported: DeviceSpec) -> None:
@@ -463,6 +643,31 @@ def _tag_csv_row(tag: TagSpec) -> dict[str, Any]:
         "word_count": tag.word_count or "",
         "byte_order": tag.byte_order,
         "word_order": tag.word_order,
+    }
+
+
+def _plugin_csv_row(config: SinkConfig, selected: bool) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "record_type": "plugin",
+        "sink_type": config.sink_type,
+        "selected": int(selected),
+        "enabled": int(config.enabled),
+    }
+    for key in _PLUGIN_CSV_FIELDS:
+        if key not in row and key in config.config:
+            row[key] = config.config[key]
+    return row
+
+
+def _plugin_route_csv_row(route: OutputRouteConfig, device: DeviceSpec | None) -> dict[str, Any]:
+    return {
+        "record_type": "route",
+        "device_group": "" if device is None else device.device_group,
+        "device_name": "" if device is None else device.name,
+        "tag_group": route.tag_group,
+        "sink_type": route.sink_type,
+        "enabled": int(route.enabled),
+        "topic": route.config.get("topic", ""),
     }
 
 

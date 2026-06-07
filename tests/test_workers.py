@@ -1,3 +1,4 @@
+import time
 from datetime import datetime, timezone
 from queue import Queue
 
@@ -84,6 +85,32 @@ class FailingSubscriptionDriver:
 class EmptyMessageSubscriptionDriver(FailingSubscriptionDriver):
     def connect(self):
         raise RuntimeError()
+
+
+class EventuallyConnectedSubscriptionDriver(FailingSubscriptionDriver):
+    attempts = 0
+    instances = []
+
+    def __init__(self, device, tags):
+        super().__init__(device, tags)
+        self.connected = False
+        self.started = False
+        self.run_count = 0
+        EventuallyConnectedSubscriptionDriver.instances.append(self)
+
+    def connect(self):
+        EventuallyConnectedSubscriptionDriver.attempts += 1
+        if EventuallyConnectedSubscriptionDriver.attempts == 1:
+            raise OSError(113, "No route to host")
+        self.connected = True
+
+    def start_subscription(self, emit):
+        self.started = True
+        self.emit = emit
+
+    def run_subscription_once(self, timeout=0.2):
+        self.run_count += 1
+        time.sleep(0.01)
 
 
 def test_driver_poller_puts_read_result_on_queue():
@@ -370,11 +397,13 @@ def test_opcua_subscription_worker_logs_runtime_failure():
         poll_interval_ms=1000,
         connection={"mode": "subscription"},
     )
-    worker = OpcUaSubscriptionWorker(FailingSubscriptionDriver, device, [], outbox, log_queue=logs)
+    worker = OpcUaSubscriptionWorker(FailingSubscriptionDriver, device, [], outbox, log_queue=logs, retry_interval_s=0)
 
-    worker.run()
+    worker.start()
+    result = outbox.get(timeout=1)
+    worker.stop()
+    worker.join(timeout=1)
 
-    result = outbox.get_nowait()
     record = logs.get_nowait()
     assert result.error == "subscription boom"
     assert record["level"] == "INFO"
@@ -394,11 +423,13 @@ def test_opcua_subscription_start_failure_logs_exception_details():
         poll_interval_ms=1000,
         connection={"mode": "subscription", "endpoint": "opc.tcp://127.0.0.1:4840"},
     )
-    worker = OpcUaSubscriptionWorker(EmptyMessageSubscriptionDriver, device, [], outbox, log_queue=logs)
+    worker = OpcUaSubscriptionWorker(EmptyMessageSubscriptionDriver, device, [], outbox, log_queue=logs, retry_interval_s=0)
 
-    worker.run()
+    worker.start()
+    record = logs.get(timeout=1)
+    worker.stop()
+    worker.join(timeout=1)
 
-    record = logs.get_nowait()
     assert record["message"] == "subscription start failed"
     assert record["data"]["error"] == ""
     assert record["data"]["exception_type"] == "RuntimeError"
@@ -407,6 +438,50 @@ def test_opcua_subscription_start_failure_logs_exception_details():
     assert "connect" in record["data"]["traceback"]
     assert "D:\\" not in record["data"]["traceback"]
     assert record["data"]["endpoint"] == "opc.tcp://127.0.0.1:4840"
+
+
+def test_subscription_worker_retries_start_failure_until_broker_recovers():
+    EventuallyConnectedSubscriptionDriver.attempts = 0
+    EventuallyConnectedSubscriptionDriver.instances = []
+    outbox = Queue()
+    logs = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="RollGap",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"host": "10.10.49.7", "port": 1883, "topic_filter": "rollgap/+/data"},
+    )
+    worker = OpcUaSubscriptionWorker(
+        EventuallyConnectedSubscriptionDriver,
+        device,
+        [],
+        outbox,
+        log_queue=logs,
+        retry_interval_s=0,
+    )
+
+    worker.start()
+    records = []
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline:
+        while not logs.empty():
+            records.append(logs.get_nowait())
+        if any(record["message"] == "subscription started" for record in records):
+            break
+        time.sleep(0.01)
+    worker.stop()
+    worker.join(timeout=1)
+
+    assert EventuallyConnectedSubscriptionDriver.attempts >= 2
+    assert any(record["message"] == "subscription start failed" for record in records)
+    assert any(record["message"] == "subscription retrying" for record in records)
+    assert any(record["message"] == "subscription started" for record in records)
+    start_failure = next(record for record in records if record["message"] == "subscription start failed")
+    assert start_failure["data"]["driver"] == "mqtt"
+    assert start_failure["data"]["host"] == "10.10.49.7"
+    assert start_failure["data"]["port"] == 1883
 
 
 def test_sink_publisher_republishes_cached_values_without_new_results():
