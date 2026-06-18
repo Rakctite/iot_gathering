@@ -15,6 +15,7 @@ class MqttInputDriver:
         self.client: Any | None = None
         self.emit: Callable[[ReadResult], None] | None = None
         self._connected = False
+        self._disconnect_error: str | None = None
 
     def connect(self) -> None:
         if self.client is None:
@@ -24,15 +25,20 @@ class MqttInputDriver:
                 raise RuntimeError("paho-mqtt is required for MQTT input") from exc
             client_id = _client_id(self.device)
             self.client = mqtt.Client(client_id=client_id)
+        self.client.on_connect = self._on_connect
+        self.client.on_disconnect = self._on_disconnect
         username = str(self.device.connection.get("username") or "")
         password = str(self.device.connection.get("password") or "")
         if username:
             self.client.username_pw_set(username, password or None)
         host = str(self.device.connection.get("host") or "localhost")
         port = int(self.device.connection.get("port") or 1883)
-        self.client.connect(host, port)
+        rc = self.client.connect(host, port)
+        if rc not in (None, 0):
+            raise RuntimeError(f"MQTT input connect failed with rc={rc}")
         self.client.loop_start()
         self._connected = True
+        self._disconnect_error = None
 
     def disconnect(self) -> None:
         if self.client is None:
@@ -72,6 +78,9 @@ class MqttInputDriver:
 
     def run_subscription_once(self, timeout: float = 0.2) -> None:
         time.sleep(timeout)
+        if not self._connected:
+            error = self._disconnect_error or "MQTT input client disconnected"
+            raise RuntimeError(error)
 
     def _on_message(self, _client: Any, _userdata: Any, message: Any) -> None:
         if self.emit is None:
@@ -84,6 +93,17 @@ class MqttInputDriver:
         except Exception as exc:
             tags = [_bad(tag, timestamp, str(exc)) for tag in self.tags]
         self.emit(ReadResult(self.device, timestamp, tags))
+
+    def _on_connect(self, _client: Any, _userdata: Any, _flags: Any, rc: int) -> None:
+        self._connected = rc == 0
+        self._disconnect_error = None if rc == 0 else f"MQTT input connect failed with rc={rc}"
+
+    def _on_disconnect(self, _client: Any, _userdata: Any, rc: int) -> None:
+        self._connected = False
+        if rc == 0:
+            self._disconnect_error = "MQTT input client disconnected"
+        else:
+            self._disconnect_error = f"MQTT input client disconnected with rc={rc}"
 
 
 def _client_id(device: DeviceSpec) -> str:

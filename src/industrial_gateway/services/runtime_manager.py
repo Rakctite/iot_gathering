@@ -40,7 +40,7 @@ class RuntimeManager:
         self.publisher: Any | None = None
         self.running = False
         self.health_interval_s = 10
-        self.runtime_log_enabled = True
+        self.runtime_log_enabled = False
         self.runtime_tags: dict[tuple[str, str], dict[str, Any]] = {}
         self.server_statuses: dict[str, dict[str, Any]] = {}
         self.logs: deque[str] = deque(maxlen=500)
@@ -89,6 +89,8 @@ class RuntimeManager:
                 log_queue=self.logger.input_queue,
                 plugin_type=sink_config.sink_type,
                 output_routes=output_routes,
+                stale_timeout_s=_float_config(sink_config.config, "message_stale_timeout_s", 15.0),
+                status_publish_interval_s=_float_config(sink_config.config, "status_publish_interval_s", 60.0),
             )
             self.publisher.start()
 
@@ -265,3 +267,10 @@ def _route_topic(base_topic: str, route_topic: Any) -> str:
     if not base or topic == base or topic.startswith(f"{base}/"):
         return topic
     return f"{base}/{topic}"
+
+
+def _float_config(config: dict[str, Any], key: str, default: float) -> float:
+    try:
+        return float(config.get(key, default))
+    except (TypeError, ValueError):
+        return default

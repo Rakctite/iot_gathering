@@ -522,7 +522,7 @@ def test_sink_publisher_republishes_cached_values_without_new_results():
             error=None,
         )
     )
-    publisher = SinkPublisher(sink, MqttConfig(base_topic="plant"), inbox)
+    publisher = SinkPublisher(sink, MqttConfig(base_topic="plant"), inbox, stale_timeout_s=15)
 
     publisher.publish_once()
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 1, tzinfo=timezone.utc))
@@ -531,6 +531,240 @@ def test_sink_publisher_republishes_cached_values_without_new_results():
     assert len(sink.messages) == 2
     assert [tag["value"] for tag in sink.messages[0].payload["tags"]] == [12.3, 45.6]
     assert [tag["value"] for tag in sink.messages[1].payload["tags"]] == [12.3, 45.6]
+
+
+def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeout():
+    inbox = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    source_time = datetime(2026, 5, 16, tzinfo=timezone.utc)
+    received_at = datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc)
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=source_time,
+            tags=[
+                TagResult(
+                    name="bar",
+                    address=2,
+                    value=12.3,
+                    quality="good",
+                    error=None,
+                    timestamp=source_time,
+                    node_id="bar",
+                )
+            ],
+        )
+    )
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        stale_timeout_s=5,
+        status_publish_interval_s=60,
+    )
+
+    publisher.publish_once(now=received_at)
+    publisher.publish_cached(received_at)
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 6, tzinfo=timezone.utc))
+
+    assert [message.topic for message in sink.messages] == ["plant/press/data", "plant/status/press"]
+    status_payload = sink.messages[1].payload
+    assert status_payload["device"]["name"] == "press"
+    assert status_payload["driver"] == "mqtt"
+    assert status_payload["status"] == "stale"
+    assert status_payload["reason"] == "message timeout"
+    assert status_payload["last_received_at"] == received_at.isoformat()
+    assert status_payload["last_source_timestamp"] == source_time.isoformat()
+
+
+def test_sink_publisher_emits_stale_tag_update_for_runtime_ui():
+    inbox = Queue()
+    status = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    received_at = datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc)
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=received_at,
+            tags=[
+                TagResult(
+                    name="bar",
+                    address=2,
+                    value=12.3,
+                    quality="good",
+                    error=None,
+                    timestamp=received_at,
+                    node_id="bar",
+                )
+            ],
+        )
+    )
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        status_outbox=status,
+        stale_timeout_s=5,
+        status_publish_interval_s=60,
+    )
+
+    publisher.publish_once(now=received_at)
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 6, tzinfo=timezone.utc))
+
+    events = [status.get_nowait(), status.get_nowait()]
+    assert events[-1]["type"] == "tag_update"
+    assert events[-1]["tag"] == "bar"
+    assert events[-1]["quality"] == "stale"
+    assert events[-1]["error"] == "message timeout"
+
+
+def test_sink_publisher_republishes_status_on_configured_interval():
+    inbox = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    received_at = datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc)
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=received_at,
+            tags=[
+                TagResult(
+                    name="bar",
+                    address=2,
+                    value=12.3,
+                    quality="good",
+                    error=None,
+                    timestamp=received_at,
+                    node_id="bar",
+                )
+            ],
+        )
+    )
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        stale_timeout_s=5,
+        status_publish_interval_s=10,
+    )
+
+    publisher.publish_once(now=received_at)
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 6, tzinfo=timezone.utc))
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 12, tzinfo=timezone.utc))
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 16, tzinfo=timezone.utc))
+
+    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
+    assert len(status_messages) == 2
+    assert all(message.payload["status"] == "stale" for message in status_messages)
+
+
+def test_sink_publisher_publishes_good_status_on_configured_interval():
+    inbox = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    received_at = datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc)
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=received_at,
+            tags=[
+                TagResult("bar", 2, 12.3, "good", None, received_at, node_id="bar"),
+            ],
+        )
+    )
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        stale_timeout_s=30,
+        status_publish_interval_s=10,
+    )
+
+    publisher.publish_once(now=received_at)
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 9, tzinfo=timezone.utc))
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 10, tzinfo=timezone.utc))
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 20, tzinfo=timezone.utc))
+
+    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
+    assert [message.payload["status"] for message in status_messages] == ["good", "good"]
+
+
+def test_sink_publisher_publishes_good_status_when_device_recovers_from_stale():
+    inbox = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    first_time = datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc)
+    second_time = datetime(2026, 5, 16, 0, 0, 7, tzinfo=timezone.utc)
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        stale_timeout_s=5,
+        status_publish_interval_s=60,
+    )
+
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=first_time,
+            tags=[
+                TagResult("bar", 2, 12.3, "good", None, first_time, node_id="bar"),
+            ],
+        )
+    )
+    publisher.publish_once(now=first_time)
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 6, tzinfo=timezone.utc))
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=second_time,
+            tags=[
+                TagResult("bar", 2, 45.6, "good", None, second_time, node_id="bar"),
+            ],
+        )
+    )
+    publisher.publish_once(now=second_time)
+
+    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
+    assert [message.payload["status"] for message in status_messages] == ["stale", "good"]
+    assert status_messages[-1].payload["reason"] == "data received"
 
 
 def test_sink_publisher_splits_opcua_cached_values_by_phh_node_prefix():

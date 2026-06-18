@@ -94,22 +94,22 @@ def _read_block(client: Any, device: DeviceSpec, block: _ReadBlock) -> dict[str,
     try:
         unit_id = int(device.connection.get("unit_id", 1))
         if block.function == "holding_register":
-            response = client.read_holding_registers(block.start, count=block.count, slave=unit_id)
+            response = client.read_holding_registers(block.start, count=block.count, device_id=unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_register_block(response.registers, block, timestamp)
         if block.function == "input_register":
-            response = client.read_input_registers(block.start, count=block.count, slave=unit_id)
+            response = client.read_input_registers(block.start, count=block.count, device_id=unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_register_block(response.registers, block, timestamp)
         if block.function == "coil":
-            response = client.read_coils(block.start, count=block.count, slave=unit_id)
+            response = client.read_coils(block.start, count=block.count, device_id=unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_bit_block(response.bits, block, timestamp)
         if block.function == "discrete_input":
-            response = client.read_discrete_inputs(block.start, count=block.count, slave=unit_id)
+            response = client.read_discrete_inputs(block.start, count=block.count, device_id=unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_bit_block(response.bits, block, timestamp)

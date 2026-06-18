@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from industrial_gateway.drivers.mqtt import MqttInputDriver, _client_id
 from industrial_gateway.models import DeviceSpec, TagSpec
 
@@ -138,3 +140,22 @@ def test_mqtt_input_driver_client_id_is_unique_per_device():
 
     assert _client_id(first) == "industrial-gateway-input-3"
     assert _client_id(second) == "industrial-gateway-input-4"
+
+
+def test_mqtt_input_driver_raises_when_client_disconnects_during_subscription():
+    device = DeviceSpec(
+        id=1,
+        name="curiot",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"topic_filter": "curiot/+/data"},
+    )
+    driver = MqttInputDriver(device, [])
+    driver.client = FakeMqttClient()
+    driver._connected = True
+
+    driver._on_disconnect(None, None, 7)
+
+    with pytest.raises(RuntimeError, match="disconnected"):
+        driver.run_subscription_once(0)

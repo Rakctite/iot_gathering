@@ -305,6 +305,8 @@ class SinkPublisher(threading.Thread):
         publish_interval_s: float = 1.0,
         plugin_type: str = "mqtt",
         output_routes: list[OutputRoute] | None = None,
+        stale_timeout_s: float = 15.0,
+        status_publish_interval_s: float = 60.0,
     ) -> None:
         super().__init__(daemon=True)
         self.sink = sink
@@ -315,17 +317,21 @@ class SinkPublisher(threading.Thread):
         self.publish_interval_s = publish_interval_s
         self.plugin_type = plugin_type
         self.output_routes = output_routes or []
+        self.stale_timeout_s = stale_timeout_s
+        self.status_publish_interval_s = status_publish_interval_s
         self._latest: dict[tuple[str, str], dict[str, Any]] = {}
+        self._device_statuses: dict[tuple[str, str], dict[str, Any]] = {}
         self._stop_event = threading.Event()
 
     def stop(self) -> None:
         self._stop_event.set()
 
-    def publish_once(self, timeout: float = 0) -> bool:
+    def publish_once(self, timeout: float = 0, now: datetime | None = None) -> bool:
         try:
             result = self.inbox.get(timeout=timeout)
         except Empty:
             return False
+        received_at = now or datetime.now(timezone.utc)
         if result.error:
             self._status(f"{result.device.name}: read failed: {result.error}")
             self._log(
@@ -334,16 +340,23 @@ class SinkPublisher(threading.Thread):
                 "read result error",
                 {"device": result.device.name, "driver": result.device.driver_type, "error": result.error},
             )
+            self._set_device_status(result.device, "disconnected", result.error, received_at, None, None)
             return True
-        self._cache_result(result)
+        self._cache_result(result, received_at)
         return True
 
     def publish_cached(self, timestamp: datetime | None = None) -> int:
+        now = timestamp or datetime.now(timezone.utc)
+        self._refresh_stale_statuses(now)
         published = 0
         for snapshot in list(self._latest.values()):
             device = snapshot["device"]
+            if self._device_status(device) != "good":
+                continue
             groups: dict[str | None, list[TagResult]] = {}
             for tag in snapshot["tags"].values():
+                if tag.quality != "good" or tag.error:
+                    continue
                 groups.setdefault(_tag_output_group(tag), []).append(tag)
             for group, tags in groups.items():
                 if not tags:
@@ -353,7 +366,7 @@ class SinkPublisher(threading.Thread):
                 message = BatchMessage.from_results(
                     device,
                     tags,
-                    timestamp or datetime.now(timezone.utc),
+                    now,
                     mqtt_config,
                 )
                 if group and (route is None or route.tag_group != group):
@@ -375,19 +388,26 @@ class SinkPublisher(threading.Thread):
                 published += 1
         return published
 
-    def _cache_result(self, result: ReadResult) -> None:
+    def _cache_result(self, result: ReadResult, received_at: datetime | None = None) -> None:
+        received_at = received_at or datetime.now(timezone.utc)
         device_key = _device_key(result.device)
         snapshot = self._latest.setdefault(
             device_key,
             {
                 "device": result.device,
                 "tags": {},
+                "last_received_at": None,
+                "last_source_timestamp": None,
             },
         )
         snapshot["device"] = result.device
+        snapshot["last_received_at"] = received_at
+        snapshot["last_source_timestamp"] = result.timestamp
+        has_bad_tag = False
         for tag in result.tags:
             snapshot["tags"][_tag_key(tag)] = tag
             if tag.quality == "bad" or tag.error:
+                has_bad_tag = True
                 self._log(
                     "ERROR",
                     "driver",
@@ -413,6 +433,119 @@ class SinkPublisher(threading.Thread):
                     "timestamp": tag.timestamp.isoformat(),
                     "quality": tag.quality,
                     "error": tag.error,
+                }
+            )
+        if has_bad_tag:
+            self._set_device_status(result.device, "bad", "tag read failed", received_at, received_at, result.timestamp)
+        else:
+            self._set_device_status(result.device, "good", "data received", received_at, received_at, result.timestamp)
+
+    def _refresh_stale_statuses(self, now: datetime) -> None:
+        if self.stale_timeout_s <= 0:
+            return
+        for snapshot in list(self._latest.values()):
+            device = snapshot["device"]
+            last_received_at = snapshot.get("last_received_at")
+            if not isinstance(last_received_at, datetime):
+                continue
+            elapsed_s = (now - last_received_at).total_seconds()
+            if elapsed_s >= self.stale_timeout_s and self._device_status(device) == "good":
+                self._set_device_status(
+                    device,
+                    "stale",
+                    "message timeout",
+                    now,
+                    last_received_at,
+                    snapshot.get("last_source_timestamp"),
+                )
+            else:
+                self._publish_status_heartbeat_if_due(device, now)
+
+    def _set_device_status(
+        self,
+        device: DeviceSpec,
+        status: str,
+        reason: str,
+        now: datetime,
+        last_received_at: datetime | None,
+        last_source_timestamp: datetime | None,
+    ) -> None:
+        key = _device_key(device)
+        current = self._device_statuses.get(key)
+        if current is not None and current.get("status") == status:
+            current["reason"] = reason
+            current["last_received_at"] = last_received_at
+            current["last_source_timestamp"] = last_source_timestamp
+            self._publish_status_heartbeat_if_due(device, now)
+            return
+        self._device_statuses[key] = {
+            "device": device,
+            "status": status,
+            "reason": reason,
+            "changed_at": now,
+            "last_published_at": None,
+            "last_received_at": last_received_at,
+            "last_source_timestamp": last_source_timestamp,
+        }
+        if current is not None or status != "good":
+            self._emit_runtime_tag_status(device, status, reason, now)
+            self._publish_device_status(device, now)
+
+    def _device_status(self, device: DeviceSpec) -> str:
+        return str(self._device_statuses.get(_device_key(device), {}).get("status") or "unknown")
+
+    def _publish_status_heartbeat_if_due(self, device: DeviceSpec, now: datetime) -> None:
+        if self.status_publish_interval_s <= 0:
+            return
+        state = self._device_statuses.get(_device_key(device))
+        if state is None:
+            return
+        interval_started_at = state.get("last_published_at") or state.get("changed_at")
+        if not isinstance(interval_started_at, datetime):
+            return
+        elapsed_s = (now - interval_started_at).total_seconds()
+        if elapsed_s >= self.status_publish_interval_s:
+            self._publish_device_status(device, now)
+
+    def _publish_device_status(self, device: DeviceSpec, now: datetime) -> None:
+        state = self._device_statuses.get(_device_key(device))
+        if state is None:
+            return
+        state["last_published_at"] = now
+        payload = {
+            "device": {"id": device.id, "name": device.name},
+            "driver": device.driver_type,
+            "status": state["status"],
+            "reason": state["reason"],
+            "last_received_at": _iso_or_none(state.get("last_received_at")),
+            "last_source_timestamp": _iso_or_none(state.get("last_source_timestamp")),
+            "changed_at": _iso_or_none(state.get("changed_at")),
+            "published_at": now.isoformat(),
+        }
+        message = BatchMessage(
+            topic=f"{self.mqtt_config.base_topic.strip('/')}/status/{_topic_token(device.name)}",
+            payload=payload,
+            qos=self.mqtt_config.qos,
+            use_message_topic=True,
+        )
+        self._publish_message(self.sink, self.plugin_type, message, device, 0)
+
+    def _emit_runtime_tag_status(self, device: DeviceSpec, quality: str, error: str, timestamp: datetime) -> None:
+        snapshot = self._latest.get(_device_key(device))
+        if not snapshot:
+            return
+        for tag in snapshot["tags"].values():
+            self._status(
+                {
+                    "type": "tag_update",
+                    "device": device.name,
+                    "tag_group": tag.tag_group,
+                    "tag": tag.name,
+                    "node_id": tag.node_id or "",
+                    "mode": _runtime_mode(device),
+                    "timestamp": timestamp.isoformat(),
+                    "quality": quality,
+                    "error": None if quality == "good" else error,
                 }
             )
 
@@ -493,6 +626,16 @@ def _device_key(device: DeviceSpec) -> tuple[str, str]:
     if device.id is not None:
         return ("id", str(device.id))
     return ("name", device.name)
+
+
+def _iso_or_none(value: Any) -> str | None:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
+def _topic_token(value: str) -> str:
+    return value.strip().replace(" ", "-")
 
 
 def _tag_key(tag: TagResult) -> str:

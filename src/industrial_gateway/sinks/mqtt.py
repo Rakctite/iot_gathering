@@ -65,6 +65,8 @@ class MqttSink:
             raise RuntimeError(f"MQTT publish failed with rc={result.rc}")
 
     def _effective_topic(self, message: BatchMessage) -> str:
+        if message.use_message_topic and "status" in message.payload and "tags" not in message.payload:
+            return message.topic.strip("/")
         if not self.received_topic_path:
             if self.dynamic_topic_enabled:
                 raise RuntimeError("MQTT dynamic topic has not been received yet")
@@ -138,6 +140,8 @@ def _decode_payload(payload: bytes | str) -> Any:
 
 
 def _mqtt_payload(message: BatchMessage) -> dict[str, Any]:
+    if "tags" not in message.payload:
+        return dict(message.payload)
     payload: dict[str, Any] = {"timestamp": _mqtt_timestamp(message.payload.get("timestamp"))}
     for tag in message.payload.get("tags", []):
         name = tag.get("name")

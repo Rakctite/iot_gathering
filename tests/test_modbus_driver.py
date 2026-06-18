@@ -16,8 +16,8 @@ class FakeModbusClient:
     def __init__(self):
         self.calls = []
 
-    def read_holding_registers(self, address, count, slave):
-        self.calls.append(("holding", address, count, slave))
+    def read_holding_registers(self, address, *, count, device_id):
+        self.calls.append(("holding", address, count, device_id))
         registers = {
             100: 25,
             101: 0x4148,
@@ -33,9 +33,18 @@ class RangeModbusClient:
     def __init__(self):
         self.calls = []
 
-    def read_holding_registers(self, address, count, slave):
-        self.calls.append(("holding", address, count, slave))
+    def read_holding_registers(self, address, *, count, device_id):
+        self.calls.append(("holding", address, count, device_id))
         return FakeResponse(registers=list(range(address, address + count)))
+
+
+class InputRegisterModbusClient:
+    def __init__(self):
+        self.calls = []
+
+    def read_input_registers(self, address, *, count, device_id):
+        self.calls.append(("input", address, count, device_id))
+        return FakeResponse(registers=[123])
 
 
 def test_modbus_driver_reads_contiguous_register_tags_in_one_block():
@@ -111,3 +120,23 @@ def test_modbus_driver_splits_holding_register_blocks_at_125_registers():
 
     assert driver.client.calls == [("holding", 0, 125, 3), ("holding", 125, 1, 3)]
     assert [result.value for result in results] == [0, 124, 125]
+
+
+def test_modbus_driver_passes_unit_id_as_device_id_for_input_registers():
+    device = DeviceSpec(
+        id=1,
+        name="pressure",
+        driver_type="modbus_serial",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 7},
+    )
+    tag = TagSpec(name="press1", address=0, function="input_register", data_type="int16", scale=0.1)
+    driver = ModbusTcpDriver(device, [tag])
+    driver.client = InputRegisterModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("input", 0, 1, 7)]
+    assert results[0].quality == "good"
+    assert results[0].value == 12.3

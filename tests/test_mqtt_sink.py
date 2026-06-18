@@ -180,6 +180,25 @@ def test_mqtt_sink_can_publish_routed_message_topic_with_shared_client():
     assert sink.client.published[0][0] == "industrial/CKP_OPCUA/PHH08/data"
 
 
+def test_mqtt_sink_publishes_status_payload_to_message_topic_even_with_dynamic_topic():
+    sink = MqttSink({"dynamic_topic_enabled": True, "mac_address": "AA:BB"})
+    sink.client = FakeClient()
+    sink.received_topic_path = "C-S/3120/PH/PHH/LO001/MC08/-/OPCUA:PLC/"
+    message = BatchMessage(
+        topic="industrial/status/NeatherD",
+        qos=1,
+        payload={"device": {"id": 8, "name": "NeatherD"}, "status": "stale"},
+        use_message_topic=True,
+    )
+
+    sink.publish_batch(message)
+
+    topic, payload, qos, _retain = sink.client.published[0]
+    assert topic == "industrial/status/NeatherD"
+    assert json.loads(payload)["status"] == "stale"
+    assert qos == 1
+
+
 def test_mqtt_sink_dynamic_topic_waits_for_received_topic():
     sink = MqttSink({"dynamic_topic_enabled": True, "mac_address": "TCP:OPCUA"})
     sink.client = FakeClient()
