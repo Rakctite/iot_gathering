@@ -225,6 +225,18 @@ def test_sink_publisher_converts_results_to_batch_message():
 
     assert sink.messages[0].topic == "plant/press/data"
     assert sink.messages[0].payload["tags"][0]["value"] == 12.3
+    assert sink.messages[1].topic == "plant/press/data/status"
+    assert sink.messages[1].payload["timestamp"] == "2026-05-16T00:00:01.000+00:00"
+    assert sink.messages[1].payload["sensors"] == [
+        {
+            "sensor_code": "bar",
+            "conn_status": "on",
+            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "health_score": 100.0,
+            "error_msg": None,
+            "update_time": "2026-05-16T00:00:01.000+00:00",
+        }
+    ]
     assert logs.empty()
 
 
@@ -528,9 +540,13 @@ def test_sink_publisher_republishes_cached_values_without_new_results():
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 1, tzinfo=timezone.utc))
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 2, tzinfo=timezone.utc))
 
-    assert len(sink.messages) == 2
-    assert [tag["value"] for tag in sink.messages[0].payload["tags"]] == [12.3, 45.6]
-    assert [tag["value"] for tag in sink.messages[1].payload["tags"]] == [12.3, 45.6]
+    data_messages = [message for message in sink.messages if message.topic == "plant/press/data"]
+    status_messages = [message for message in sink.messages if message.topic == "plant/press/data/status"]
+    assert len(data_messages) == 2
+    assert len(status_messages) == 2
+    assert [tag["value"] for tag in data_messages[0].payload["tags"]] == [12.3, 45.6]
+    assert [tag["value"] for tag in data_messages[1].payload["tags"]] == [12.3, 45.6]
+    assert [sensor["conn_status"] for sensor in status_messages[0].payload["sensors"]] == ["on", "on"]
 
 
 def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeout():
@@ -575,14 +591,22 @@ def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeo
     publisher.publish_cached(received_at)
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 6, tzinfo=timezone.utc))
 
-    assert [message.topic for message in sink.messages] == ["plant/press/data", "plant/status/press"]
-    status_payload = sink.messages[1].payload
-    assert status_payload["device"]["name"] == "press"
-    assert status_payload["driver"] == "mqtt"
-    assert status_payload["status"] == "stale"
-    assert status_payload["reason"] == "message timeout"
-    assert status_payload["last_received_at"] == received_at.isoformat()
-    assert status_payload["last_source_timestamp"] == source_time.isoformat()
+    assert [message.topic for message in sink.messages] == [
+        "plant/press/data",
+        "plant/press/data/status",
+        "plant/press/data/status",
+    ]
+    status_payload = sink.messages[2].payload
+    assert status_payload["sensors"] == [
+        {
+            "sensor_code": "bar",
+            "conn_status": "off",
+            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "health_score": 0.0,
+            "error_msg": "message timeout",
+            "update_time": "2026-05-16T00:00:06.000+00:00",
+        }
+    ]
 
 
 def test_sink_publisher_emits_stale_tag_update_for_runtime_ui():
@@ -676,9 +700,9 @@ def test_sink_publisher_republishes_status_on_configured_interval():
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 12, tzinfo=timezone.utc))
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 16, tzinfo=timezone.utc))
 
-    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
+    status_messages = [message for message in sink.messages if message.topic == "plant/press/data/status"]
     assert len(status_messages) == 2
-    assert all(message.payload["status"] == "stale" for message in status_messages)
+    assert all(message.payload["sensors"][0]["conn_status"] == "off" for message in status_messages)
 
 
 def test_sink_publisher_publishes_good_status_on_configured_interval():
@@ -715,8 +739,8 @@ def test_sink_publisher_publishes_good_status_on_configured_interval():
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 10, tzinfo=timezone.utc))
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 20, tzinfo=timezone.utc))
 
-    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
-    assert [message.payload["status"] for message in status_messages] == ["good", "good"]
+    status_messages = [message for message in sink.messages if message.topic == "plant/press/data/status"]
+    assert [message.payload["sensors"][0]["conn_status"] for message in status_messages] == ["on", "on", "on"]
 
 
 def test_sink_publisher_publishes_good_status_when_device_recovers_from_stale():
@@ -762,9 +786,9 @@ def test_sink_publisher_publishes_good_status_when_device_recovers_from_stale():
     )
     publisher.publish_once(now=second_time)
 
-    status_messages = [message for message in sink.messages if message.topic == "plant/status/press"]
-    assert [message.payload["status"] for message in status_messages] == ["stale", "good"]
-    assert status_messages[-1].payload["reason"] == "data received"
+    status_messages = [message for message in sink.messages if message.topic == "plant/press/data/status"]
+    assert [message.payload["sensors"][0]["conn_status"] for message in status_messages] == ["off", "on"]
+    assert status_messages[-1].payload["sensors"][0]["error_msg"] is None
 
 
 def test_sink_publisher_splits_opcua_cached_values_by_phh_node_prefix():
@@ -810,5 +834,16 @@ def test_sink_publisher_splits_opcua_cached_values_by_phh_node_prefix():
     publisher.publish_once()
     publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 1, tzinfo=timezone.utc))
 
-    assert [message.topic for message in sink.messages] == ["plant/opc/PHH01/data", "plant/opc/PHH08/data"]
-    assert [message.payload["tags"][0]["value"] for message in sink.messages] == [11, 88]
+    assert [message.topic for message in sink.messages] == [
+        "plant/opc/PHH01/data",
+        "plant/opc/PHH01/data/status",
+        "plant/opc/PHH08/data",
+        "plant/opc/PHH08/data/status",
+    ]
+    data_messages = [message for message in sink.messages if not message.topic.endswith("/status")]
+    status_messages = [message for message in sink.messages if message.topic.endswith("/status")]
+    assert [message.payload["tags"][0]["value"] for message in data_messages] == [11, 88]
+    assert [message.payload["sensors"][0]["sensor_code"] for message in status_messages] == [
+        "PV_CUR_MOLD_N11",
+        "PV_CUR_MOLD_N11",
+    ]

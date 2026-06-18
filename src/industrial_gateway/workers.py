@@ -361,30 +361,15 @@ class SinkPublisher(threading.Thread):
             for group, tags in groups.items():
                 if not tags:
                     continue
-                route = self._route_for(device, group or "")
-                mqtt_config = route.mqtt_config if route is not None else self.mqtt_config
-                message = BatchMessage.from_results(
-                    device,
-                    tags,
-                    now,
-                    mqtt_config,
-                )
-                if group and (route is None or route.tag_group != group):
-                    message = BatchMessage(
-                        topic=_topic_with_group(message.topic, group),
-                        payload=message.payload,
-                        qos=message.qos,
-                        use_message_topic=message.use_message_topic,
-                    )
-                plugin_type = route.sink_type if route is not None else self.plugin_type
-                if route is not None:
-                    message = BatchMessage(
-                        topic=route.topic or message.topic,
-                        payload=message.payload,
-                        qos=message.qos,
-                        use_message_topic=True,
-                    )
+                message, plugin_type = self._measurement_message(device, tags, group, now)
                 self._publish_message(self.sink, plugin_type, message, device, len(tags))
+                self._publish_message(
+                    self.sink,
+                    plugin_type,
+                    _ctm_status_message(message, tags, "on", None, now),
+                    device,
+                    len(tags),
+                )
                 published += 1
         return published
 
@@ -458,7 +443,7 @@ class SinkPublisher(threading.Thread):
                     last_received_at,
                     snapshot.get("last_source_timestamp"),
                 )
-            else:
+            elif self._device_status(device) != "good":
                 self._publish_status_heartbeat_if_due(device, now)
 
     def _set_device_status(
@@ -512,23 +497,23 @@ class SinkPublisher(threading.Thread):
         if state is None:
             return
         state["last_published_at"] = now
-        payload = {
-            "device": {"id": device.id, "name": device.name},
-            "driver": device.driver_type,
-            "status": state["status"],
-            "reason": state["reason"],
-            "last_received_at": _iso_or_none(state.get("last_received_at")),
-            "last_source_timestamp": _iso_or_none(state.get("last_source_timestamp")),
-            "changed_at": _iso_or_none(state.get("changed_at")),
-            "published_at": now.isoformat(),
-        }
-        message = BatchMessage(
-            topic=f"{self.mqtt_config.base_topic.strip('/')}/status/{_topic_token(device.name)}",
-            payload=payload,
-            qos=self.mqtt_config.qos,
-            use_message_topic=True,
-        )
-        self._publish_message(self.sink, self.plugin_type, message, device, 0)
+        snapshot = self._latest.get(_device_key(device))
+        if not snapshot:
+            return
+        groups: dict[str | None, list[TagResult]] = {}
+        for tag in snapshot["tags"].values():
+            groups.setdefault(_tag_output_group(tag), []).append(tag)
+        conn_status = "on" if state["status"] == "good" else "off"
+        error_msg = None if conn_status == "on" else state["reason"]
+        for group, tags in groups.items():
+            message, plugin_type = self._measurement_message(device, tags, group, now)
+            self._publish_message(
+                self.sink,
+                plugin_type,
+                _ctm_status_message(message, tags, conn_status, error_msg, now),
+                device,
+                len(tags),
+            )
 
     def _emit_runtime_tag_status(self, device: DeviceSpec, quality: str, error: str, timestamp: datetime) -> None:
         snapshot = self._latest.get(_device_key(device))
@@ -601,6 +586,33 @@ class SinkPublisher(threading.Thread):
                 data = {"plugin": self.plugin_type, **data}
             self.log_queue.put({"level": level, "source": source, "message": message, "data": data})
 
+    def _measurement_message(
+        self,
+        device: DeviceSpec,
+        tags: list[TagResult],
+        group: str | None,
+        timestamp: datetime,
+    ) -> tuple[BatchMessage, str]:
+        route = self._route_for(device, group or "")
+        mqtt_config = route.mqtt_config if route is not None else self.mqtt_config
+        message = BatchMessage.from_results(device, tags, timestamp, mqtt_config)
+        if group and (route is None or route.tag_group != group):
+            message = BatchMessage(
+                topic=_topic_with_group(message.topic, group),
+                payload=message.payload,
+                qos=message.qos,
+                use_message_topic=message.use_message_topic,
+            )
+        plugin_type = route.sink_type if route is not None else self.plugin_type
+        if route is not None:
+            message = BatchMessage(
+                topic=route.topic or message.topic,
+                payload=message.payload,
+                qos=message.qos,
+                use_message_topic=True,
+            )
+        return message, plugin_type
+
     def _route_for(self, device: DeviceSpec, tag_group: str) -> OutputRoute | None:
         exact = [
             route
@@ -630,12 +642,47 @@ def _device_key(device: DeviceSpec) -> tuple[str, str]:
 
 def _iso_or_none(value: Any) -> str | None:
     if isinstance(value, datetime):
-        return value.isoformat()
+        return _iso_millis(value)
     return None
 
 
 def _topic_token(value: str) -> str:
     return value.strip().replace(" ", "-")
+
+
+def _ctm_status_message(
+    measurement: BatchMessage,
+    tags: list[TagResult],
+    conn_status: str,
+    error_msg: str | None,
+    timestamp: datetime,
+) -> BatchMessage:
+    update_time = _iso_millis(timestamp)
+    return BatchMessage(
+        topic=f"{measurement.topic.rstrip('/')}/status",
+        payload={
+            "timestamp": measurement.payload.get("timestamp", update_time),
+            "sensors": [
+                {
+                    "sensor_code": tag.name,
+                    "conn_status": conn_status if tag.quality == "good" and not tag.error else "off",
+                    "last_seen": _iso_millis(tag.timestamp),
+                    "health_score": 100.0 if conn_status == "on" and tag.quality == "good" and not tag.error else 0.0,
+                    "error_msg": tag.error if tag.error else error_msg,
+                    "update_time": update_time,
+                }
+                for tag in tags
+            ],
+        },
+        qos=measurement.qos,
+        use_message_topic=True,
+    )
+
+
+def _iso_millis(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    return value.isoformat(timespec="milliseconds")
 
 
 def _tag_key(tag: TagResult) -> str:

@@ -58,3 +58,5 @@
 - Verified full test suite after plugin split: `108 passed, 13 warnings`.
 - Verified full test suite after MSSQL removal: `108 passed, 13 warnings`.
 - Cleaned the parent `0_services\iot_gathering` folder and removed legacy/runtime artifacts outside this Git repository: logs, docker test stores, copied SQLite DB files, SQL seed file, screenshots/images, `Roll`, and `publish_dummy`.
+- Updated MQTT status publishing to follow the `ctm_modbus_gathering` contract: publish status to `<measurement_topic>/status` with payload `{"timestamp": ..., "sensors": [...]}` containing `sensor_code`, `conn_status`, `last_seen`, `health_score`, `error_msg`, and `update_time`.
+- Verified full test suite after CTM-style status publishing: `108 passed, 13 warnings`.

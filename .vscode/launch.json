@@ -2,16 +2,37 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Industrial Gateway Web",
+      "name": "Industrial Gateway Web (core)",
       "type": "debugpy",
       "request": "launch",
       "module": "industrial_gateway.web.app",
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
+        "PYTHONPATH": "${workspaceFolder}\\src",
+        "INDUSTRIAL_GATEWAY_PORT": "50200",
         "INDUSTRIAL_GATEWAY_ADMIN_USER": "admin",
         "INDUSTRIAL_GATEWAY_ADMIN_PASSWORD": "password",
-        "INDUSTRIAL_GATEWAY_SESSION_SECRET": "local-dev-secret"
+        "INDUSTRIAL_GATEWAY_SESSION_SECRET": "local-dev-secret",
+        "INDUSTRIAL_GATEWAY_PLUGIN_PROFILE": "core"
+      }
+    },
+    {
+      "name": "Industrial Gateway Web (postgres)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "industrial_gateway.web.app",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+        "PYTHONPATH": "${workspaceFolder}\\src",
+        "INDUSTRIAL_GATEWAY_PORT": "50200",
+        "INDUSTRIAL_GATEWAY_ADMIN_USER": "admin",
+        "INDUSTRIAL_GATEWAY_ADMIN_PASSWORD": "password",
+        "INDUSTRIAL_GATEWAY_SESSION_SECRET": "local-dev-secret",
+        "INDUSTRIAL_GATEWAY_PLUGIN_PROFILE": "postgres"
       }
     }
   ]
