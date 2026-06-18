@@ -92,8 +92,8 @@ def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
     assert drivers.json()["modbus_tcp"]["connection_fields"][0]["key"] == "host"
     assert drivers.json()["opcua"]["tag_functions"] == ["opcua_node"]
     assert plugins.status_code == 200
+    assert list(plugins.json()) == ["mqtt"]
     assert plugins.json()["mqtt"]["fields"][0]["key"] == "host"
-    assert plugins.json()["mssql"]["fields"][-1]["key"] == "trust_server_certificate"
 
 
 def test_runtime_status_endpoint_is_protected(tmp_path):

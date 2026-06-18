@@ -8,14 +8,15 @@ dependencies = [
     "pyserial>=3.5",
     "asyncua>=1.1",
     "paho-mqtt>=2.1",
-    "psycopg[binary]>=3.2",
-    "pyodbc>=5.1",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.34",
     "itsdangerous>=2.2",
 ]
 
 [project.optional-dependencies]
+postgres = [
+    "psycopg[binary]>=3.2",
+]
 dev = [
     "pytest>=8.0",
     "httpx>=0.28",

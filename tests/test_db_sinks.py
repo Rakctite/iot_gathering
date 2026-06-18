@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
 from industrial_gateway.models import BatchMessage
-from industrial_gateway.sinks.database import MssqlSink, PostgresSink
+from industrial_gateway.sinks.database import PostgresSink
 
 
 class FakeCursor:
@@ -64,17 +64,3 @@ def test_postgres_sink_inserts_one_row_per_tag_with_json_value():
     assert params[5:] == ("good", None, "2026-05-16T02:30:01+00:00")
     assert conn.commits == 2
     assert conn.closed is True
-
-
-def test_mssql_sink_uses_question_mark_placeholders():
-    conn = FakeConnection()
-    sink = MssqlSink({"table": "gateway_tag_values", "auto_create": True}, connect=lambda config: conn)
-
-    sink.start()
-    sink.publish_batch(_message())
-
-    create_sql, _ = conn.cursor_obj.statements[0]
-    assert "IF OBJECT_ID" in create_sql
-    insert_sql, params = conn.cursor_obj.statements[1]
-    assert "VALUES (?, ?, ?, ?, ?, ?, ?, ?)" in insert_sql
-    assert params[1] == "press"

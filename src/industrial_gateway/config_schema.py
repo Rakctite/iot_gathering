@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from typing import Any, Literal
 
 ConnectionFieldKind = Literal["text", "int", "float", "choice"]
@@ -92,17 +93,6 @@ _PLUGIN_FIELDS: dict[str, tuple[PluginField, ...]] = {
         PluginField("table", "Table", "text", "gateway_tag_values"),
         PluginField("auto_create", "Auto create table", "bool", True),
     ),
-    "mssql": (
-        PluginField("server", "Server", "text", "localhost"),
-        PluginField("port", "Port", "int", 1433, minimum=1, maximum=65535),
-        PluginField("database", "Database", "text", "gateway"),
-        PluginField("username", "Username", "text", "sa"),
-        PluginField("password", "Password", "password", ""),
-        PluginField("driver", "ODBC Driver", "text", "ODBC Driver 18 for SQL Server"),
-        PluginField("table", "Table", "text", "gateway_tag_values"),
-        PluginField("auto_create", "Auto create table", "bool", True),
-        PluginField("trust_server_certificate", "Trust server certificate", "bool", True),
-    ),
 }
 
 
@@ -171,7 +161,19 @@ def plugin_schema() -> dict[str, dict[str, Any]]:
             "fields": [_plugin_field_to_dict(field) for field in fields],
         }
         for plugin_type, fields in _PLUGIN_FIELDS.items()
+        if plugin_type in enabled_plugin_types()
     }
+
+
+def enabled_plugin_types() -> list[str]:
+    plugins = ["mqtt"]
+    if _plugin_profile() in {"postgres", "db", "full"}:
+        plugins.append("postgresql")
+    return plugins
+
+
+def _plugin_profile() -> str:
+    return os.getenv("INDUSTRIAL_GATEWAY_PLUGIN_PROFILE", "core").strip().lower()
 
 
 def _connection_field_to_dict(field: ConnectionField) -> dict[str, Any]:

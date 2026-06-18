@@ -15,8 +15,8 @@ database sinks.
 - Web UI for device/tag/output settings, start/stop, and recent runtime logs.
 - Device and tag lists support add, update, and delete from the GUI. Selecting a
   device shows its tags in the adjacent list.
-- Output settings are shown under a Plugins tab. The current v1 plugin is MQTT,
-  PostgreSQL, or MSSQL, with one selected output plugin at a time.
+- Output settings are shown under a Plugins tab. The current v1 plugin is MQTT
+  by default, with PostgreSQL available in the DB-enabled build.
 - Runtime logging uses a separate queue-backed logger thread. Button actions,
   saved/deleted data, driver reads, publish events, and errors can be shown in
   the Runtime tab when Debug logs is enabled.
@@ -101,9 +101,8 @@ The Plugins tab supports one active output plugin:
 
 - `mqtt`: publishes the device batch JSON to MQTT.
 - `postgresql`: inserts one row per tag into a PostgreSQL table.
-- `mssql`: inserts one row per tag into a Microsoft SQL Server table.
 
-PostgreSQL and MSSQL default table:
+PostgreSQL default table:
 
 ```text
 gateway_tag_values
@@ -118,9 +117,6 @@ device_id, device_name, tag_name, tag_address, value_json, quality, error, tag_t
 `value_json` stores the tag value as JSON text, so strings, numbers, booleans,
 and null values can share the same schema. If `auto_create` is enabled, the sink
 creates the table when it starts.
-
-MSSQL uses `pyodbc`, so the target PC still needs a matching SQL Server ODBC
-driver installed, such as `ODBC Driver 18 for SQL Server`.
 
 ## OPC UA Driver
 

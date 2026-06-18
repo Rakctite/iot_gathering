@@ -5,20 +5,22 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     INDUSTRIAL_GATEWAY_HOST=0.0.0.0 \
     INDUSTRIAL_GATEWAY_PORT=50137 \
     INDUSTRIAL_GATEWAY_STORE=/opt/iot_gathering/gateway.sqlite3 \
-    INDUSTRIAL_GATEWAY_LOG_ROOT=/opt/iot_gathering/industrial_gateway_log
+    INDUSTRIAL_GATEWAY_LOG_ROOT=/opt/iot_gathering/industrial_gateway_log \
+    INDUSTRIAL_GATEWAY_PLUGIN_PROFILE=postgres
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         build-essential \
+        libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
 COPY src ./src
 
 RUN python -m pip install --no-cache-dir --upgrade pip \
-    && python -m pip install --no-cache-dir .
+    && python -m pip install --no-cache-dir ".[postgres]"
 
 RUN mkdir -p /opt/iot_gathering/industrial_gateway_log
 
