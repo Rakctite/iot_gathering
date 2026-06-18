@@ -10,7 +10,7 @@
 ## Repositories
 - Git remote: `https://github.com/Rakctite/iot_gathering`.
 - Main branch: `main`.
-- Latest pushed commit: `08db5a5 Add MQTT stale status publishing`.
+- Latest pushed commit before current topic responder work: `b5c2d9d Align MQTT status payload with CTM format`.
 
 ## Docker Image
 - Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.2`.
@@ -25,12 +25,13 @@
 - 2026-06-18: Full test suite passed with `104 passed, 13 warnings`.
 - 2026-06-18: Started splitting DB plugins out of the default/core build. Default plugin profile exposes MQTT only; `INDUSTRIAL_GATEWAY_PLUGIN_PROFILE=postgres` exposes PostgreSQL in addition to MQTT.
 - 2026-06-18: MSSQL support was fully removed from active code and README. The project keeps PostgreSQL as the only DB sink path.
+- 2026-06-18: Topic sender integration is being added inside `iot_gathering` as an optional PostgreSQL-backed MQTT responder. It must stay disabled in the core/ARM profile.
 
 ## Open TODO
 - Review whether root compose image tag `btx/iot_gathering:1.0.2` should be reflected in the project deployment docs.
 - Review runtime defaults for `message_stale_timeout_s` and `status_publish_interval_s` in production settings.
 - Decide whether the paho MQTT callback deprecation warning needs follow-up.
-- Add topic sender as an optional PostgreSQL-backed feature after the plugin dependency split is stable.
+- Decide whether topic responder settings should later move from environment variables into the web UI/plugin settings.
 - Decide final image tags for DB amd64 and ARM/core builds before registry push.
 
 ## Work Log
@@ -60,3 +61,7 @@
 - Cleaned the parent `0_services\iot_gathering` folder and removed legacy/runtime artifacts outside this Git repository: logs, docker test stores, copied SQLite DB files, SQL seed file, screenshots/images, `Roll`, and `publish_dummy`.
 - Updated MQTT status publishing to follow the `ctm_modbus_gathering` contract: publish status to `<measurement_topic>/status` with payload `{"timestamp": ..., "sensors": [...]}` containing `sensor_code`, `conn_status`, `last_seen`, `health_score`, `error_msg`, and `update_time`.
 - Verified full test suite after CTM-style status publishing: `108 passed, 13 warnings`.
+- Added `TopicResponder`, an optional PostgreSQL-backed MQTT responder for topic center requests.
+- The responder handles `C-S/request-topic` and `C-S/request-sensor_cd`, publishing to `S-C/request-topic/{mac}` and `S-C/request-sensor_cd/{mac}`.
+- Runtime starts the responder only when `INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED=true` and `INDUSTRIAL_GATEWAY_PLUGIN_PROFILE` exposes PostgreSQL.
+- Verified full test suite after topic responder integration: `.venv\Scripts\python.exe -m pytest` -> `113 passed, 13 warnings`.

@@ -118,6 +118,28 @@ device_id, device_name, tag_name, tag_address, value_json, quality, error, tag_t
 and null values can share the same schema. If `auto_create` is enabled, the sink
 creates the table when it starts.
 
+## Topic Responder
+
+The PostgreSQL-enabled build can answer topic-center style MQTT requests from
+the `topic_sender` service. It is disabled by default and only starts when both
+conditions are true:
+
+```powershell
+$env:INDUSTRIAL_GATEWAY_PLUGIN_PROFILE="postgres"
+$env:INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED="true"
+```
+
+Request/response topics:
+
+```text
+C-S/request-topic        -> S-C/request-topic/{mac}
+C-S/request-sensor_cd    -> S-C/request-sensor_cd/{mac}
+```
+
+Database and broker settings use the existing topic sender environment names:
+`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`,
+`DB_CONNECT_TIMEOUT`, `MQTT_HOST`, `MQTT_PORT`, and `MQTT_KEEPALIVE`.
+
 ## OPC UA Driver
 
 Use driver type `opcua` and set the device connection JSON with an endpoint:

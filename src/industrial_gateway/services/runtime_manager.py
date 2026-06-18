@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+import os
 import threading
 from collections import deque
 from pathlib import Path
 from queue import Empty, Queue
 from typing import Any
 
+from industrial_gateway.config_schema import enabled_plugin_types
 from industrial_gateway.defaults import driver_registry as default_driver_registry
 from industrial_gateway.defaults import sink_registry as default_sink_registry
 from industrial_gateway.logging_worker import AsyncLogWorker
 from industrial_gateway.models import MqttConfig
+from industrial_gateway.services.topic_responder import TopicResponder, TopicResponderConfig
 from industrial_gateway.store import ConfigStore
 from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, OutputRoute, SinkPublisher
 
@@ -24,6 +27,7 @@ class RuntimeManager:
         poller_class: type = DriverPoller,
         subscription_worker_class: type = OpcUaSubscriptionWorker,
         publisher_class: type = SinkPublisher,
+        topic_responder_class: type = TopicResponder,
         log_root: str | Path | None = None,
     ) -> None:
         self.store = store
@@ -32,12 +36,14 @@ class RuntimeManager:
         self.poller_class = poller_class
         self.subscription_worker_class = subscription_worker_class
         self.publisher_class = publisher_class
+        self.topic_responder_class = topic_responder_class
         self.result_queue: Queue[Any] = Queue()
         self.status_queue: Queue[Any] = Queue()
         self.log_display_queue: Queue[str] = Queue()
         self.pollers: list[Any] = []
         self.subscription_workers: list[Any] = []
         self.publisher: Any | None = None
+        self.topic_responder: Any | None = None
         self.running = False
         self.health_interval_s = 10
         self.runtime_log_enabled = False
@@ -94,6 +100,14 @@ class RuntimeManager:
             )
             self.publisher.start()
 
+            self.topic_responder = None
+            if _topic_responder_enabled():
+                self.topic_responder = self.topic_responder_class(
+                    TopicResponderConfig.from_env(),
+                    log_queue=self.logger.input_queue,
+                )
+                self.topic_responder.start()
+
             self.pollers = []
             self.subscription_workers = []
             for device in self.store.list_devices():
@@ -136,6 +150,8 @@ class RuntimeManager:
                 poller.stop()
             for worker in self.subscription_workers:
                 worker.stop()
+            if self.topic_responder is not None:
+                self.topic_responder.stop()
             if self.publisher is not None:
                 self.publisher.stop()
             self.running = False
@@ -274,3 +290,8 @@ def _float_config(config: dict[str, Any], key: str, default: float) -> float:
         return float(config.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _topic_responder_enabled() -> bool:
+    enabled = os.getenv("INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED", "").strip().lower()
+    return enabled in {"1", "true", "yes", "on"} and "postgresql" in enabled_plugin_types()

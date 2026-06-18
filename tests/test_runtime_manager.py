@@ -32,6 +32,21 @@ class FakeSink:
         pass
 
 
+class FakeTopicResponder:
+    started = 0
+    stopped = 0
+
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+
+    def start(self):
+        type(self).started += 1
+
+    def stop(self):
+        type(self).stopped += 1
+
+
 def make_store(tmp_path):
     store = ConfigStore(tmp_path / "gateway.sqlite3")
     store.initialize()
@@ -161,5 +176,54 @@ def test_output_routes_are_hidden_when_selected_plugin_is_not_mqtt(tmp_path):
     manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink, "database": FakeSink})
 
     assert manager._output_routes() == []
+
+    manager.shutdown()
+
+
+def test_topic_responder_starts_only_when_enabled_for_postgres_profile(tmp_path, monkeypatch):
+    FakeWorker.started = 0
+    FakeWorker.stopped = 0
+    FakeTopicResponder.started = 0
+    FakeTopicResponder.stopped = 0
+    monkeypatch.setenv("INDUSTRIAL_GATEWAY_PLUGIN_PROFILE", "postgres")
+    monkeypatch.setenv("INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED", "true")
+    manager = RuntimeManager(
+        make_store(tmp_path),
+        driver_registry={"modbus_tcp": lambda device, tags: object()},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakeWorker,
+        subscription_worker_class=FakeWorker,
+        publisher_class=FakeWorker,
+        topic_responder_class=FakeTopicResponder,
+    )
+
+    manager.start()
+
+    assert FakeTopicResponder.started == 1
+
+    manager.stop()
+
+    assert FakeTopicResponder.stopped == 1
+
+    manager.shutdown()
+
+
+def test_topic_responder_does_not_start_for_core_profile(tmp_path, monkeypatch):
+    FakeTopicResponder.started = 0
+    monkeypatch.setenv("INDUSTRIAL_GATEWAY_PLUGIN_PROFILE", "core")
+    monkeypatch.setenv("INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED", "true")
+    manager = RuntimeManager(
+        make_store(tmp_path),
+        driver_registry={"modbus_tcp": lambda device, tags: object()},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakeWorker,
+        subscription_worker_class=FakeWorker,
+        publisher_class=FakeWorker,
+        topic_responder_class=FakeTopicResponder,
+    )
+
+    manager.start()
+
+    assert FakeTopicResponder.started == 0
 
     manager.shutdown()
