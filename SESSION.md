@@ -12,6 +12,12 @@
 - Main branch: `main`.
 - Latest pushed commit before current topic responder work: `b5c2d9d Align MQTT status payload with CTM format`.
 
+## Session Discipline
+- When Codex changes files in this project, update this `SESSION.md` in the same work session.
+- Record the purpose of the change, key files touched, verification result, commit hash, and any remaining TODO.
+- If work is done from another terminal, branch, or worktree, sync this file after the commit is merged or pushed to `main`.
+- If the change affects integrated deployment behavior, also update the root `C:\Users\mingyu.shin\docker\SESSION.md`.
+
 ## Docker Image
 - Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.2`.
 - Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.0`.
