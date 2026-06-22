@@ -12,6 +12,8 @@ from industrial_gateway.defaults import driver_registry as default_driver_regist
 from industrial_gateway.defaults import sink_registry as default_sink_registry
 from industrial_gateway.logging_worker import AsyncLogWorker
 from industrial_gateway.models import MqttConfig
+from industrial_gateway.services.config_service import ConfigService
+from industrial_gateway.services.topic_request_client import request_topic_by_mac
 from industrial_gateway.services.topic_responder import TopicResponder, TopicResponderConfig
 from industrial_gateway.store import ConfigStore
 from industrial_gateway.workers import DriverPoller, OpcUaSubscriptionWorker, OutputRoute, SinkPublisher
@@ -28,6 +30,7 @@ class RuntimeManager:
         subscription_worker_class: type = OpcUaSubscriptionWorker,
         publisher_class: type = SinkPublisher,
         topic_responder_class: type = TopicResponder,
+        topic_request_resolver: Any | None = None,
         log_root: str | Path | None = None,
     ) -> None:
         self.store = store
@@ -37,6 +40,8 @@ class RuntimeManager:
         self.subscription_worker_class = subscription_worker_class
         self.publisher_class = publisher_class
         self.topic_responder_class = topic_responder_class
+        self.topic_request_resolver = request_topic_by_mac if topic_request_resolver is None else topic_request_resolver
+        self.config_service = ConfigService(store)
         self.result_queue: Queue[Any] = Queue()
         self.status_queue: Queue[Any] = Queue()
         self.log_display_queue: Queue[str] = Queue()
@@ -44,6 +49,8 @@ class RuntimeManager:
         self.subscription_workers: list[Any] = []
         self.publisher: Any | None = None
         self.topic_responder: Any | None = None
+        self.topic_refresh_thread: threading.Thread | None = None
+        self.topic_refresh_stop = threading.Event()
         self.running = False
         self.health_interval_s = 10
         self.runtime_log_enabled = False
@@ -74,12 +81,15 @@ class RuntimeManager:
             if runtime_log_enabled is not None:
                 self.runtime_log_enabled = runtime_log_enabled
             self.logger.set_runtime_log_enabled(self.runtime_log_enabled)
+            self.topic_refresh_stop.clear()
             self._clear_queue(self.result_queue)
             self._clear_queue(self.status_queue)
             self.runtime_tags = self._initial_runtime_tags()
             self.server_statuses = {}
 
             sink_config = self.store.get_sink_config()
+            if sink_config.sink_type == "mqtt" and _bool_config(sink_config.config, "topic_request_on_start", True):
+                self._refresh_dynamic_route_topics()
             sink_class = self.sink_registry.get(sink_config.sink_type)
             sink = sink_class({**sink_config.config, "enabled": sink_config.enabled})
             message_config = MqttConfig(
@@ -99,6 +109,7 @@ class RuntimeManager:
                 status_publish_interval_s=_float_config(sink_config.config, "status_publish_interval_s", 60.0),
             )
             self.publisher.start()
+            self._start_topic_refresh_thread(sink_config.config)
 
             self.topic_responder = None
             if _topic_responder_enabled():
@@ -152,6 +163,10 @@ class RuntimeManager:
                 worker.stop()
             if self.topic_responder is not None:
                 self.topic_responder.stop()
+            self.topic_refresh_stop.set()
+            if self.topic_refresh_thread is not None:
+                self.topic_refresh_thread.join(timeout=2)
+                self.topic_refresh_thread = None
             if self.publisher is not None:
                 self.publisher.stop()
             self.running = False
@@ -263,10 +278,46 @@ class RuntimeManager:
                     tag_group=route.tag_group,
                     sink_type=route.sink_type,
                     mqtt_config=mqtt_config,
-                    topic=_route_topic(base_topic, route.config.get("topic")),
+                    topic=_route_topic(base_topic, _route_publish_topic(route.config)),
                 )
             )
         return routes
+
+    def _refresh_dynamic_route_topics(self) -> None:
+        results = self.config_service.refresh_dynamic_output_route_topics(resolver=self.topic_request_resolver)
+        for result in results:
+            error = result.get("error")
+            route = result.get("route", {})
+            mac_address = route.get("mac_address", "")
+            if error:
+                self.logger.input_queue.put(
+                    {"level": "ERROR", "source": "topic_request", "message": str(error), "mac_address": mac_address}
+                )
+            else:
+                self.logger.input_queue.put(
+                    {
+                        "level": "INFO",
+                        "source": "topic_request",
+                        "message": "route topic resolved",
+                        "mac_address": mac_address,
+                        "topic": result.get("resolved_topic", ""),
+                    }
+                )
+        if self.publisher is not None:
+            self.publisher.output_routes = self._output_routes()
+
+    def _start_topic_refresh_thread(self, config: dict[str, Any]) -> None:
+        interval_s = _float_config(config, "topic_refresh_interval_s", 300.0)
+        if interval_s <= 0:
+            return
+        self.topic_refresh_stop.clear()
+
+        def refresh_loop() -> None:
+            while not self.topic_refresh_stop.wait(interval_s):
+                self._refresh_dynamic_route_topics()
+
+        self.topic_refresh_thread = threading.Thread(target=refresh_loop, daemon=True)
+        self.topic_refresh_thread.start()
 
 
 def _uses_subscription_worker(device: Any) -> bool:
@@ -276,7 +327,10 @@ def _uses_subscription_worker(device: Any) -> bool:
 
 
 def _route_topic(base_topic: str, route_topic: Any) -> str:
-    topic = str(route_topic or "").strip("/")
+    raw_topic = str(route_topic or "").strip()
+    if raw_topic.startswith("C-S/"):
+        return raw_topic
+    topic = raw_topic.strip("/")
     if not topic:
         return ""
     base = base_topic.strip("/")
@@ -285,11 +339,24 @@ def _route_topic(base_topic: str, route_topic: Any) -> str:
     return f"{base}/{topic}"
 
 
+def _route_publish_topic(config: dict[str, Any]) -> Any:
+    if config.get("dynamic_topic_enabled") and config.get("resolved_topic"):
+        return config.get("resolved_topic")
+    return config.get("topic")
+
+
 def _float_config(config: dict[str, Any], key: str, default: float) -> float:
     try:
         return float(config.get(key, default))
     except (TypeError, ValueError):
         return default
+
+
+def _bool_config(config: dict[str, Any], key: str, default: bool) -> bool:
+    value = config.get(key, default)
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
 def _topic_responder_enabled() -> bool:

@@ -20,7 +20,7 @@
 
       <section id="consoleView" class="console hidden">
         <header class="topbar">
-          <h1>Industrial Gateway</h1>
+          <h1>Industrial Gateway <span id="appVersion" class="app-version"></span></h1>
           <div class="status"><span id="runtimeBadge">Stopped</span><button id="logoutButton">Log out</button></div>
         </header>
         <nav class="tabs">
@@ -29,18 +29,28 @@
           <button data-tab="runtime">Runtime</button>
         </nav>
         <section id="devicesTab" class="tab-panel">
-          <div class="split">
-            <div>
-              <h2>Devices</h2>
-              <ul id="deviceList" class="list"></ul>
-              <button id="newDevice">New device</button>
-              <button id="importDevices">Import CSV</button>
-              <button id="exportDevices">Export CSV</button>
-              <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
+          <div class="device-layout">
+            <div class="device-editor-stack">
+              <form id="deviceForm" class="panel"></form>
+              <form id="tagForm" class="panel"></form>
             </div>
-            <form id="deviceForm" class="panel"></form>
-            <div class="panel">
-              <form id="tagForm"></form>
+            <div class="device-data-stack">
+              <section class="device-list-panel panel">
+                <div class="table-header">
+                  <h2>Devices</h2>
+                  <div class="table-actions">
+                    <button id="newDevice">New device</button>
+                    <button id="importDevices">Import CSV</button>
+                    <button id="exportDevices">Export CSV</button>
+                    <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
+                  </div>
+                </div>
+                <table class="fixed-table device-list-table">
+                  <thead><tr><th>Group</th><th>Name</th><th>Driver</th><th>Endpoint</th><th>Mode</th></tr></thead>
+                  <tbody id="deviceList"></tbody>
+                </table>
+              </section>
+              <section class="tags-panel panel">
               <div class="table-header">
                 <h2>Tags</h2>
                 <div class="page-controls">
@@ -52,10 +62,8 @@
                   <button id="nextTagListPage" type="button" title="Next tag page">&gt;</button>
                 </div>
               </div>
-              <button id="importTags" type="button">Import CSV</button>
-              <button id="exportTags" type="button">Export CSV</button>
-              <input id="tagCsvFile" type="file" accept=".csv,text/csv" hidden>
               <table class="fixed-table"><thead><tr><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
+              </section>
             </div>
           </div>
         </section>
@@ -69,15 +77,12 @@
               <form id="pluginForm" class="panel"></form>
               <div id="pluginRouteEditor">
                 <h2>Output Routes</h2>
-                <button id="importPluginRoutes" type="button">Import CSV</button>
-                <button id="exportPluginRoutes" type="button">Export CSV</button>
-                <input id="pluginRouteCsvFile" type="file" accept=".csv,text/csv" hidden>
                 <form id="pluginRouteForm" class="panel"></form>
               </div>
             </div>
             <div id="pluginRouteListPanel" class="plugin-routes-panel panel">
               <h2>Route List</h2>
-              <table class="fixed-table"><thead><tr><th>Device</th><th>Group</th><th>Plugin</th><th>Enabled</th></tr></thead><tbody id="pluginRouteList"></tbody></table>
+              <table class="fixed-table route-table"><thead><tr><th>Device</th><th>Group</th><th>MAC</th><th>Plugin</th><th>Enabled</th></tr></thead><tbody id="pluginRouteList"></tbody></table>
             </div>
           </div>
         </section>

@@ -1,11 +1,17 @@
 FROM python:3.12-slim
 
+ARG IOT_GATHERING_VERSION=1.0.3
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    INDUSTRIAL_GATEWAY_VERSION=${IOT_GATHERING_VERSION} \
     INDUSTRIAL_GATEWAY_HOST=0.0.0.0 \
-    INDUSTRIAL_GATEWAY_PORT=50137 \
+    INDUSTRIAL_GATEWAY_PORT=50200 \
     INDUSTRIAL_GATEWAY_STORE=/opt/iot_gathering/gateway.sqlite3 \
     INDUSTRIAL_GATEWAY_LOG_ROOT=/opt/iot_gathering/industrial_gateway_log
+
+LABEL org.opencontainers.image.title="iot_gathering" \
+      org.opencontainers.image.version="${IOT_GATHERING_VERSION}"
 
 WORKDIR /app
 
@@ -22,6 +28,6 @@ RUN python -m pip install --no-cache-dir --upgrade pip \
 
 RUN mkdir -p /opt/iot_gathering/industrial_gateway_log
 
-EXPOSE 50137
+EXPOSE 50200
 
 CMD ["industrial-gateway-web"]

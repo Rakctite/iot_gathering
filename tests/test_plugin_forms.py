@@ -8,8 +8,12 @@ def test_default_plugin_schema_includes_only_core_mqtt_fields():
 
 
 def test_plugin_forms_include_mqtt_and_postgresql_fields():
-    assert [field.key for field in plugin_fields("mqtt")][:3] == ["host", "port", "base_topic"]
-    assert [field.key for field in plugin_fields("mqtt")][-2:] == ["dynamic_topic_enabled", "mac_address"]
+    mqtt_keys = [field.key for field in plugin_fields("mqtt")]
+    assert mqtt_keys[:3] == ["host", "port", "base_topic"]
+    assert "dynamic_topic_enabled" not in mqtt_keys
+    assert "mac_address" not in mqtt_keys
+    assert "topic_request_on_start" in mqtt_keys
+    assert "topic_refresh_interval_s" in mqtt_keys
     assert [field.key for field in plugin_fields("postgresql")][:4] == ["host", "port", "database", "username"]
     assert plugin_fields("mssql") == []
 

@@ -108,6 +108,7 @@ async function login(event) {
 }
 
 async function loadAll() {
+  await loadAppInfo();
   state.driverSchema = await api("/api/schema/drivers");
   state.pluginSchema = await api("/api/schema/plugins");
   state.devices = await api("/api/devices");
@@ -119,21 +120,46 @@ async function loadAll() {
   connectRuntimeEvents();
 }
 
+async function loadAppInfo() {
+  const info = await api("/api/app-info");
+  document.getElementById("appVersion").textContent = `v${info.version}`;
+}
+
 function renderDevices() {
   const list = document.getElementById("deviceList");
-  list.innerHTML = "";
-  state.devices.forEach(device => {
-    const item = document.createElement("li");
-    item.textContent = `${device.device_group ? device.device_group + " / " : ""}${device.name}`;
-    item.className = state.selectedDevice && state.selectedDevice.id === device.id ? "active" : "";
-    item.onclick = () => selectDevice(device);
-    list.appendChild(item);
+  list.innerHTML = state.devices.map(device =>
+    `<tr class="${state.selectedDevice && state.selectedDevice.id === device.id ? "active" : ""}" data-device-id="${device.id}">
+      <td>${escapeHtml(device.device_group || "")}</td>
+      <td>${escapeHtml(device.name)}</td>
+      <td>${escapeHtml(device.driver_type)}</td>
+      <td>${escapeHtml(deviceEndpoint(device))}</td>
+      <td>${escapeHtml(deviceMode(device))}</td>
+    </tr>`
+  ).join("");
+  document.querySelectorAll("#deviceList tr").forEach(row => {
+    row.onclick = () => selectDevice(state.devices.find(device => device.id === Number(row.dataset.deviceId)));
   });
   renderDeviceForm(state.selectedDevice);
   loadTags();
 }
 
+function deviceEndpoint(device) {
+  const connection = device.connection || {};
+  if (connection.endpoint) return connection.endpoint;
+  if (connection.host && connection.port) return `${connection.host}:${connection.port}`;
+  if (connection.host) return connection.host;
+  if (connection.port) return connection.port;
+  if (connection.topic_filter) return connection.topic_filter;
+  return "";
+}
+
+function deviceMode(device) {
+  const connection = device.connection || {};
+  return connection.mode || connection.topic_filter || "";
+}
+
 function selectDevice(device) {
+  if (!device) return;
   state.selectedDevice = device;
   state.selectedTag = null;
   state.tagGroupPage = 0;
@@ -347,22 +373,10 @@ async function importDevicesCsv(file) {
   renderDevices();
 }
 
-async function importTagsCsv(file) {
-  if (!file || !state.selectedDevice) return;
-  await uploadCsv(`/api/devices/${state.selectedDevice.id}/tags/import`, file);
-  await loadTags();
-}
-
 async function importPluginsCsv(file) {
   if (!file) return;
   await uploadCsv("/api/plugins/import", file);
   await loadPlugin();
-  await loadPluginRoutes();
-}
-
-async function importPluginRoutesCsv(file) {
-  if (!file) return;
-  await uploadCsv("/api/plugin-routes/import", file);
   await loadPluginRoutes();
 }
 
@@ -505,6 +519,10 @@ function renderPluginRouteForm(route) {
     <label>Device <select name="device_id">${deviceOptions}</select></label>
     <label>Tag group <input name="tag_group" value="${escapeHtml(data.tag_group || "")}" placeholder="empty = all groups"></label>
     <label>Topic <input name="topic" value="${escapeHtml(data.config?.topic || "")}" placeholder="empty = auto topic"></label>
+    <label class="checkbox-row"><input name="dynamic_topic_enabled" type="checkbox" ${data.config?.dynamic_topic_enabled ? "checked" : ""}> Request topic by MAC</label>
+    <label>MAC address <input name="mac_address" value="${escapeHtml(data.config?.mac_address || "")}"></label>
+    <button id="resolvePluginRouteTopic" type="button">Request topic</button>
+    <label>Topic sender result <textarea name="route_resolution" readonly rows="4">${escapeHtml(routeResolutionText(data))}</textarea></label>
     <label class="checkbox-row"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}> Enabled</label>
     <button type="submit">${data.id ? "Save route" : "Add route"}</button>
     <button id="newPluginRoute" type="button">New route</button>
@@ -516,12 +534,13 @@ function renderPluginRouteForm(route) {
     renderPluginRoutes();
     renderPluginRouteForm(null);
   };
+  document.getElementById("resolvePluginRouteTopic").onclick = resolvePluginRouteTopic;
   if (data.id) document.getElementById("deletePluginRoute").onclick = deletePluginRoute;
 }
 
 function renderPluginRoutes() {
   document.getElementById("pluginRouteList").innerHTML = state.pluginRoutes.filter(route => route.sink_type === "mqtt").map(route =>
-    `<tr class="${state.selectedPluginRoute && state.selectedPluginRoute.id === route.id ? "active" : ""}" data-route-id="${route.id}"><td>${escapeHtml(route.device_name || "All devices")}</td><td>${escapeHtml(route.tag_group || "All groups")}</td><td>${escapeHtml(route.sink_type)}</td><td>${route.enabled ? "Yes" : "No"}</td></tr>`
+    `<tr class="${state.selectedPluginRoute && state.selectedPluginRoute.id === route.id ? "active" : ""}" data-route-id="${route.id}"><td>${escapeHtml(route.device_name || "All devices")}</td><td>${escapeHtml(route.tag_group || "All groups")}</td><td>${escapeHtml(route.mac_address || "")}</td><td>${escapeHtml(route.sink_type)}</td><td>${route.enabled ? "Yes" : "No"}</td></tr>`
   ).join("");
   document.querySelectorAll("#pluginRouteList tr").forEach(row => row.onclick = () => selectPluginRoute(Number(row.dataset.routeId)));
 }
@@ -540,21 +559,60 @@ function selectPluginRoute(routeId) {
 
 async function savePluginRoute(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const payload = {
+  await saveCurrentPluginRoute();
+  state.selectedPluginRoute = null;
+  await loadPluginRoutes();
+}
+
+function pluginRoutePayloadFromForm(form) {
+  const existingConfig = state.selectedPluginRoute?.config || {};
+  return {
     device_id: form.elements.device_id.value || null,
     tag_group: form.elements.tag_group.value,
     sink_type: "mqtt",
     enabled: form.elements.enabled.checked,
-    config: { topic: form.elements.topic.value }
+    config: {
+      topic: form.elements.topic.value,
+      dynamic_topic_enabled: form.elements.dynamic_topic_enabled.checked,
+      mac_address: form.elements.mac_address.value,
+      resolved_topic: existingConfig.resolved_topic || "",
+      resolved_sensor_count: existingConfig.resolved_sensor_count || "",
+      resolved_error: existingConfig.resolved_error || "",
+      resolved_at: existingConfig.resolved_at || ""
+    }
   };
+}
+
+async function saveCurrentPluginRoute() {
+  const form = document.getElementById("pluginRouteForm");
+  const payload = pluginRoutePayloadFromForm(form);
   if (state.selectedPluginRoute && state.selectedPluginRoute.id) {
-    await api(`/api/plugin-routes/${state.selectedPluginRoute.id}`, { method: "PUT", body: JSON.stringify(payload) });
-  } else {
-    await api("/api/plugin-routes", { method: "POST", body: JSON.stringify(payload) });
+    return api(`/api/plugin-routes/${state.selectedPluginRoute.id}`, { method: "PUT", body: JSON.stringify(payload) });
   }
-  state.selectedPluginRoute = null;
-  await loadPluginRoutes();
+  return api("/api/plugin-routes", { method: "POST", body: JSON.stringify(payload) });
+}
+
+async function resolvePluginRouteTopic() {
+  try {
+    const saved = await saveCurrentPluginRoute();
+    const result = await api(`/api/plugin-routes/${saved.id}/resolve-topic`, { method: "POST" });
+    await loadPluginRoutes();
+    state.selectedPluginRoute = state.pluginRoutes.find(route => route.id === result.route.id) || result.route;
+    renderPluginRoutes();
+    renderPluginRouteForm(state.selectedPluginRoute);
+  } catch (error) {
+    alert(error.message || "Topic request failed");
+  }
+}
+
+function routeResolutionText(route) {
+  const config = route?.config || {};
+  const lines = [];
+  if (config.resolved_topic) lines.push(`topic: ${config.resolved_topic}`);
+  if (config.resolved_sensor_count !== undefined && config.resolved_sensor_count !== "") lines.push(`sensors: ${config.resolved_sensor_count}`);
+  if (config.resolved_at) lines.push(`resolved: ${config.resolved_at}`);
+  if (config.resolved_error) lines.push(`error: ${config.resolved_error}`);
+  return lines.join("\n");
 }
 
 async function deletePluginRoute() {
@@ -617,41 +675,18 @@ document.getElementById("deviceCsvFile").onchange = async event => {
     alert(error.message || "Device CSV import failed");
   }
 };
-document.getElementById("importTags").onclick = () => document.getElementById("tagCsvFile").click();
-document.getElementById("exportTags").onclick = () => {
-  if (!state.selectedDevice) return;
-  downloadCsv(`/api/devices/${state.selectedDevice.id}/tags.csv`);
-};
 document.getElementById("importPlugins").onclick = () => document.getElementById("pluginCsvFile").click();
 document.getElementById("exportPlugins").onclick = () => downloadCsv("/api/plugins.csv");
-document.getElementById("importPluginRoutes").onclick = () => document.getElementById("pluginRouteCsvFile").click();
-document.getElementById("exportPluginRoutes").onclick = () => downloadCsv("/api/plugin-routes.csv");
 document.getElementById("prevTagGroupPage").onclick = () => turnTagPage("group", -1);
 document.getElementById("nextTagGroupPage").onclick = () => turnTagPage("group", 1);
 document.getElementById("prevTagListPage").onclick = () => turnTagPage("tag", -1);
 document.getElementById("nextTagListPage").onclick = () => turnTagPage("tag", 1);
-document.getElementById("tagCsvFile").onchange = async event => {
-  try {
-    await importTagsCsv(event.target.files[0]);
-    event.target.value = "";
-  } catch (error) {
-    alert(error.message || "Tag CSV import failed");
-  }
-};
 document.getElementById("pluginCsvFile").onchange = async event => {
   try {
     await importPluginsCsv(event.target.files[0]);
     event.target.value = "";
   } catch (error) {
     alert(error.message || "Plugin CSV import failed");
-  }
-};
-document.getElementById("pluginRouteCsvFile").onchange = async event => {
-  try {
-    await importPluginRoutesCsv(event.target.files[0]);
-    event.target.value = "";
-  } catch (error) {
-    alert(error.message || "Plugin route CSV import failed");
   }
 };
 document.getElementById("startRuntime").onclick = async () => renderRuntime(await api("/api/runtime/start", {

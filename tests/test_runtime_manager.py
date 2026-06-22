@@ -47,6 +47,15 @@ class FakeTopicResponder:
         type(self).stopped += 1
 
 
+class FakePublisher(FakeWorker):
+    instances = []
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.output_routes = kwargs.get("output_routes") or []
+        type(self).instances.append(self)
+
+
 def make_store(tmp_path):
     store = ConfigStore(tmp_path / "gateway.sqlite3")
     store.initialize()
@@ -165,6 +174,96 @@ def test_output_routes_inherit_selected_mqtt_plugin_config(tmp_path):
     assert routes[0].mqtt_config.base_topic == "plant"
     assert routes[0].mqtt_config.qos == 1
     assert routes[0].topic == "plant/temp/current"
+
+    manager.shutdown()
+
+
+def test_output_routes_use_resolved_topic_for_dynamic_route(tmp_path):
+    store = make_store(tmp_path)
+    store.save_sink_config(
+        SinkConfig(
+            sink_type="mqtt",
+            enabled=True,
+            config={"host": "broker", "port": 1884, "base_topic": "plant", "client_id": "gw", "qos": 1},
+        )
+    )
+    store.save_output_route(
+        OutputRouteConfig(
+            device_id=store.list_devices()[0].id,
+            tag_group="PHH01",
+            enabled=True,
+            config={
+                "topic": "manual/fallback",
+                "dynamic_topic_enabled": True,
+                "resolved_topic": "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/",
+            },
+        )
+    )
+    manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink})
+
+    routes = manager._output_routes()
+
+    assert routes[0].topic == "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/"
+
+    manager.shutdown()
+
+
+def test_start_requests_dynamic_route_topics_from_plugin_setting(tmp_path):
+    FakeWorker.started = 0
+    FakePublisher.instances = []
+    store = make_store(tmp_path)
+    store.save_sink_config(
+        SinkConfig(
+            sink_type="mqtt",
+            enabled=True,
+            config={
+                "host": "broker",
+                "port": 1884,
+                "base_topic": "plant",
+                "client_id": "gw",
+                "qos": 1,
+                "topic_request_on_start": True,
+                "topic_refresh_interval_s": 0,
+            },
+        )
+    )
+    store.save_output_route(
+        OutputRouteConfig(
+            device_id=store.list_devices()[0].id,
+            tag_group="PHH01",
+            enabled=True,
+            config={"dynamic_topic_enabled": True, "mac_address": "AA:BB", "topic": "fallback"},
+        )
+    )
+    calls = []
+
+    manager = RuntimeManager(
+        store,
+        driver_registry={"modbus_tcp": lambda device, tags: object()},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakeWorker,
+        publisher_class=FakePublisher,
+        topic_request_resolver=lambda mac, mqtt_config: calls.append((mac, mqtt_config["host"]))
+        or {"topic": "3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/", "sensor_count": 12},
+    )
+
+    manager.start()
+
+    saved_route = store.list_output_routes()[0]
+    assert calls == [("AA:BB", "broker")]
+    assert saved_route.config["resolved_topic"] == "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/"
+    assert FakePublisher.instances[0].output_routes[0].topic == "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/"
+
+    manager.shutdown()
+
+
+def test_start_enables_topic_refresh_thread_from_plugin_setting(tmp_path):
+    store = make_store(tmp_path)
+    manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink})
+
+    manager._start_topic_refresh_thread({"topic_refresh_interval_s": 60})
+
+    assert manager.topic_refresh_thread is not None
 
     manager.shutdown()
 

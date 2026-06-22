@@ -13,6 +13,7 @@ def test_index_served(tmp_path):
 
     assert response.status_code == 200
     assert "Industrial Gateway" in response.text
+    assert 'id="appVersion"' in response.text
     assert "/static/app.js" in response.text
 
 
@@ -36,6 +37,9 @@ def test_runtime_tab_has_pagination_controls():
     assert "prevGroupPage" not in html
     assert "runtime-log-scroll" in html
     assert "runtimeLogEnabled" in html
+    assert "device-layout" in html
+    assert "device-editor-stack" in html
+    assert "device-list-table" in html
     assert "pluginRouteForm" in html
     assert "pluginRouteList" in html
     assert "pluginRouteEditor" in html
@@ -43,17 +47,23 @@ def test_runtime_tab_has_pagination_controls():
     assert "importPlugins" in html
     assert "exportPlugins" in html
     assert "pluginCsvFile" in html
-    assert "importPluginRoutes" in html
-    assert "exportPluginRoutes" in html
-    assert "pluginRouteCsvFile" in html
+    assert "importTags" not in html
+    assert "exportTags" not in html
+    assert "tagCsvFile" not in html
+    assert "importPluginRoutes" not in html
+    assert "exportPluginRoutes" not in html
+    assert "pluginRouteCsvFile" not in html
     assert "tagPageRows" in script
+    assert "deviceEndpoint" in script
+    assert "deviceMode" in script
     assert "deleteDevice" in script
     assert "deleteTag" in script
     assert "savePluginRoute" in script
     assert "importPluginsCsv" in script
-    assert "importPluginRoutesCsv" in script
+    assert "importTagsCsv" not in script
+    assert "importPluginRoutesCsv" not in script
     assert "/api/plugins.csv" in script
-    assert "/api/plugin-routes.csv" in script
+    assert "/api/plugin-routes.csv" not in script
     assert "renderPluginRouteVisibility" in script
     assert 'sink_type: "mqtt"' in script
     assert "pluginRouteFields" not in script
@@ -76,6 +86,8 @@ def test_runtime_tab_has_pagination_controls():
     assert "width: max-content" in styles
     assert "max-width: 0" in styles
     assert "body { margin: 0; font-family: Segoe UI, Arial, sans-serif; color: #172026; background: #f4f6f8; overflow-x: hidden; }" in styles
+    assert ".device-layout { display: grid; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr)" in styles
+    assert ".device-list-table th:nth-child(4), .device-list-table td:nth-child(4)" in styles
     assert ".runtime-grid { width: 100%; max-width: calc(100vw - 36px)" in styles
     assert ".runtime-tags-panel, .runtime-log-panel { min-height: 0; min-width: 0; max-width: 100%; overflow: hidden;" in styles
 

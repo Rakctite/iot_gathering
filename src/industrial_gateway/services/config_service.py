@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Any
+from datetime import datetime, timezone
+from typing import Any, Callable
 
 from industrial_gateway.config_schema import (
     connection_fields_for_driver,
@@ -13,6 +14,7 @@ from industrial_gateway.config_schema import (
     tag_type_choices_for_driver,
 )
 from industrial_gateway.models import DeviceSpec, OutputRouteConfig, SinkConfig, TagSpec
+from industrial_gateway.services.topic_request_client import request_topic_by_mac
 from industrial_gateway.store import ConfigStore
 
 
@@ -87,8 +89,14 @@ _PLUGIN_CSV_FIELDS = [
     "password",
     "client_id",
     "qos",
+    "topic_request_on_start",
+    "topic_refresh_interval_s",
     "dynamic_topic_enabled",
     "mac_address",
+    "resolved_topic",
+    "resolved_sensor_count",
+    "resolved_error",
+    "resolved_at",
     "database",
     "table",
     "auto_create",
@@ -105,6 +113,12 @@ _PLUGIN_ROUTE_CSV_FIELDS = [
     "sink_type",
     "enabled",
     "topic",
+    "dynamic_topic_enabled",
+    "mac_address",
+    "resolved_topic",
+    "resolved_sensor_count",
+    "resolved_error",
+    "resolved_at",
 ]
 
 
@@ -261,6 +275,92 @@ class ConfigService:
     def delete_output_route(self, route_id: int) -> None:
         self.store.delete_output_route(route_id)
 
+    def refresh_dynamic_output_route_topics(
+        self,
+        *,
+        resolver: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        results = []
+        for route in self.store.list_output_routes():
+            config = _route_config({"config": route.config})
+            if not route.enabled or route.sink_type != "mqtt":
+                continue
+            if not config.get("dynamic_topic_enabled") or not config.get("mac_address"):
+                continue
+            results.append(self.resolve_output_route_topic(route.id or 0, resolver=resolver))
+        return results
+
+    def resolve_output_route_topic(
+        self,
+        route_id: int,
+        *,
+        resolver: Callable[[str, dict[str, Any]], dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        route = _route_by_required_id(self.store.list_output_routes(), route_id)
+        config = _route_config({"config": route.config})
+        mac_address = str(config.get("mac_address") or "").strip()
+        if not mac_address:
+            raise ValueError("route mac_address is required")
+        mqtt_config = self.get_sink_config("mqtt")["config"]
+        topic_resolver = resolver or request_topic_by_mac
+        try:
+            resolved = topic_resolver(mac_address, mqtt_config)
+            topic = _received_topic_path(str(resolved.get("topic") or ""))
+            if topic == "C-S/":
+                raise ValueError("topic response is empty")
+            config.update(
+                {
+                    "dynamic_topic_enabled": True,
+                    "mac_address": mac_address,
+                    "resolved_topic": topic,
+                    "resolved_sensor_count": int(resolved.get("sensor_count") or 0),
+                    "resolved_error": "",
+                    "resolved_at": _utc_now(),
+                }
+            )
+        except Exception as exc:
+            config.update(
+                {
+                    "dynamic_topic_enabled": True,
+                    "mac_address": mac_address,
+                    "resolved_error": str(exc),
+                    "resolved_at": _utc_now(),
+                }
+            )
+            self.store.save_output_route(
+                OutputRouteConfig(
+                    id=route.id,
+                    device_id=route.device_id,
+                    tag_group=route.tag_group,
+                    sink_type=route.sink_type,
+                    enabled=route.enabled,
+                    config=config,
+                )
+            )
+            return {
+                "route": next(item for item in self.list_output_routes() if item["id"] == route_id),
+                "resolved_topic": "",
+                "sensor_count": 0,
+                "resolved_at": config["resolved_at"],
+                "error": str(exc),
+            }
+        self.store.save_output_route(
+            OutputRouteConfig(
+                id=route.id,
+                device_id=route.device_id,
+                tag_group=route.tag_group,
+                sink_type=route.sink_type,
+                enabled=route.enabled,
+                config=config,
+            )
+        )
+        return {
+            "route": next(item for item in self.list_output_routes() if item["id"] == route_id),
+            "resolved_topic": topic,
+            "sensor_count": config["resolved_sensor_count"],
+            "resolved_at": config["resolved_at"],
+        }
+
     def export_plugin_routes_csv(self) -> str:
         output = io.StringIO()
         writer = csv.DictWriter(output, fieldnames=_PLUGIN_ROUTE_CSV_FIELDS, lineterminator="\n")
@@ -300,7 +400,7 @@ class ConfigService:
             tag_group=(row.get("tag_group") or "").strip(),
             sink_type=sink_type,
             enabled=_csv_bool(row.get("enabled"), True),
-            config=_route_config({"topic": row.get("topic") or ""}),
+            config=_route_config(row),
         )
         return self.store.save_output_route(route)
 
@@ -473,20 +573,46 @@ def _sink_to_dict(config: SinkConfig, selected: bool) -> dict[str, Any]:
 
 
 def _route_to_dict(route: OutputRouteConfig) -> dict[str, Any]:
+    config = _route_config({"config": route.config})
     return {
         "id": route.id,
         "device_id": route.device_id,
         "tag_group": route.tag_group,
         "sink_type": route.sink_type,
         "enabled": route.enabled,
-        "config": _route_config({"config": route.config}),
+        "config": config,
+        "mac_address": config.get("mac_address", ""),
+        "resolved_topic": config.get("resolved_topic", ""),
+        "resolved_sensor_count": config.get("resolved_sensor_count", ""),
+        "resolved_error": config.get("resolved_error", ""),
+        "resolved_at": config.get("resolved_at", ""),
     }
 
 
 def _route_config(payload: dict[str, Any]) -> dict[str, Any]:
     config = payload.get("config") or {}
+    values: dict[str, Any] = {}
     topic = str(config.get("topic") or payload.get("topic") or "").strip()
-    return {"topic": topic} if topic else {}
+    if topic:
+        values["topic"] = topic
+    if _csv_bool(config.get("dynamic_topic_enabled", payload.get("dynamic_topic_enabled")), False):
+        values["dynamic_topic_enabled"] = True
+    mac_address = str(config.get("mac_address") or payload.get("mac_address") or "").strip()
+    if mac_address:
+        values["mac_address"] = mac_address
+    resolved_topic = str(config.get("resolved_topic") or payload.get("resolved_topic") or "").strip()
+    if resolved_topic:
+        values["resolved_topic"] = resolved_topic
+    resolved_count = config.get("resolved_sensor_count", payload.get("resolved_sensor_count"))
+    if resolved_count not in (None, ""):
+        values["resolved_sensor_count"] = int(resolved_count)
+    resolved_error = str(config.get("resolved_error") or payload.get("resolved_error") or "").strip()
+    if resolved_error:
+        values["resolved_error"] = resolved_error
+    resolved_at = str(config.get("resolved_at") or payload.get("resolved_at") or "").strip()
+    if resolved_at:
+        values["resolved_at"] = resolved_at
+    return values
 
 
 def _csv_bool(value: Any, default: bool) -> bool:
@@ -587,6 +713,13 @@ def _route_by_id(routes: list[OutputRouteConfig], route_id: int) -> list[OutputR
     return [route for route in routes if route.id == route_id]
 
 
+def _route_by_required_id(routes: list[OutputRouteConfig], route_id: int) -> OutputRouteConfig:
+    for route in routes:
+        if route.id == route_id:
+            return route
+    raise KeyError(f"route not found: {route_id}")
+
+
 def _validate_same_device_config(existing: DeviceSpec, imported: DeviceSpec) -> None:
     if (
         existing.driver_type != imported.driver_type
@@ -660,6 +793,7 @@ def _plugin_csv_row(config: SinkConfig, selected: bool) -> dict[str, Any]:
 
 
 def _plugin_route_csv_row(route: OutputRouteConfig, device: DeviceSpec | None) -> dict[str, Any]:
+    config = _route_config({"config": route.config})
     return {
         "record_type": "route",
         "device_group": "" if device is None else device.device_group,
@@ -667,7 +801,13 @@ def _plugin_route_csv_row(route: OutputRouteConfig, device: DeviceSpec | None) -
         "tag_group": route.tag_group,
         "sink_type": route.sink_type,
         "enabled": int(route.enabled),
-        "topic": route.config.get("topic", ""),
+        "topic": config.get("topic", ""),
+        "dynamic_topic_enabled": int(bool(config.get("dynamic_topic_enabled", False))),
+        "mac_address": config.get("mac_address", ""),
+        "resolved_topic": config.get("resolved_topic", ""),
+        "resolved_sensor_count": config.get("resolved_sensor_count", ""),
+        "resolved_error": config.get("resolved_error", ""),
+        "resolved_at": config.get("resolved_at", ""),
     }
 
 
@@ -676,3 +816,14 @@ def _existing_tag_id(tags: list[TagSpec], imported: TagSpec) -> int | None:
         if tag.tag_group == imported.tag_group and tag.name == imported.name:
             return tag.id
     return None
+
+
+def _received_topic_path(topic: str) -> str:
+    stripped = topic.lstrip("/")
+    if stripped.startswith("C-S/"):
+        return stripped
+    return f"C-S/{stripped}"
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")

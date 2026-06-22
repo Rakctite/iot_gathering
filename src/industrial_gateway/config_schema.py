@@ -81,8 +81,8 @@ _PLUGIN_FIELDS: dict[str, tuple[PluginField, ...]] = {
         PluginField("qos", "QoS", "int", 0, minimum=0, maximum=2),
         PluginField("message_stale_timeout_s", "Message stale sec", "int", 15, minimum=1, maximum=86400),
         PluginField("status_publish_interval_s", "Status publish sec", "int", 60, minimum=1, maximum=86400),
-        PluginField("dynamic_topic_enabled", "Request topic by MAC", "bool", False),
-        PluginField("mac_address", "MAC address", "text", ""),
+        PluginField("topic_request_on_start", "Request route topics on start", "bool", True),
+        PluginField("topic_refresh_interval_s", "Topic refresh sec", "int", 300, minimum=0, maximum=86400),
     ),
     "postgresql": (
         PluginField("host", "Host", "text", "localhost"),

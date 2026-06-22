@@ -4,13 +4,13 @@
 - Project path: `C:\Users\mingyu.shin\docker\0_services\iot_gathering\iot_gathering`.
 - Integrated workspace root: `C:\Users\mingyu.shin\docker`.
 - This project is the Industrial Gateway service for Modbus TCP, Modbus Serial, OPC UA, MQTT input, and MQTT/database outputs.
-- Web service listens on port `50137` by default.
+- Web service listens on port `50200` by default.
 - When starting Codex here, also read the root `C:\Users\mingyu.shin\docker\SESSION.md` for integrated service context.
 
 ## Repositories
 - Git remote: `https://github.com/Rakctite/iot_gathering`.
 - Main branch: `main`.
-- Latest pushed commit before current topic responder work: `b5c2d9d Align MQTT status payload with CTM format`.
+- Latest pushed commit before current route-level topic sender work: `789d284 Document session update discipline`.
 
 ## Session Discipline
 - When Codex changes files in this project, update this `SESSION.md` in the same work session.
@@ -19,8 +19,8 @@
 - If the change affects integrated deployment behavior, also update the root `C:\Users\mingyu.shin\docker\SESSION.md`.
 
 ## Docker Image
-- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.2`.
-- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.0`.
+- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
+- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
 - Planned next variants:
   - DB environment: PostgreSQL plugin enabled, topic sender later.
   - ARM/core environment: DB plugins excluded, hardware drivers and MQTT only.
@@ -32,9 +32,10 @@
 - 2026-06-18: Started splitting DB plugins out of the default/core build. Default plugin profile exposes MQTT only; `INDUSTRIAL_GATEWAY_PLUGIN_PROFILE=postgres` exposes PostgreSQL in addition to MQTT.
 - 2026-06-18: MSSQL support was fully removed from active code and README. The project keeps PostgreSQL as the only DB sink path.
 - 2026-06-18: Topic sender integration is being added inside `iot_gathering` as an optional PostgreSQL-backed MQTT responder. It must stay disabled in the core/ARM profile.
+- 2026-06-22: Route-level topic sender request work is in progress. Dynamic topic settings are moving from the MQTT plugin to output routes.
 
 ## Open TODO
-- Review whether root compose image tag `btx/iot_gathering:1.0.2` should be reflected in the project deployment docs.
+- Review whether root compose image tag `btx/iot_gathering:1.0.3` should be reflected in the project deployment docs.
 - Review runtime defaults for `message_stale_timeout_s` and `status_publish_interval_s` in production settings.
 - Decide whether the paho MQTT callback deprecation warning needs follow-up.
 - Decide whether topic responder settings should later move from environment variables into the web UI/plugin settings.
@@ -71,3 +72,25 @@
 - The responder handles `C-S/request-topic` and `C-S/request-sensor_cd`, publishing to `S-C/request-topic/{mac}` and `S-C/request-sensor_cd/{mac}`.
 - Runtime starts the responder only when `INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED=true` and `INDUSTRIAL_GATEWAY_PLUGIN_PROFILE` exposes PostgreSQL.
 - Verified full test suite after topic responder integration: `.venv\Scripts\python.exe -m pytest` -> `113 passed, 13 warnings`.
+
+### 2026-06-22
+- Moved `dynamic_topic_enabled` and `mac_address` ownership from MQTT plugin settings to output route config.
+- Added route-level topic resolution flow: `POST /api/plugin-routes/{route_id}/resolve-topic` requests topic/sensor metadata by MAC and stores `resolved_topic`, `resolved_sensor_count`, `resolved_error`, and `resolved_at` on the route.
+- Added `topic_request_client.py` for one-shot MQTT topic sender requests using `C-S/request-topic` and `C-S/request-sensor_cd`.
+- Updated runtime output route selection so a dynamic route publishes to stored `resolved_topic`; manual `topic` remains the fallback.
+- Simplified `MqttSink` by removing global dynamic-topic request/rewrite behavior. The sink now publishes to either the message topic supplied by a route or the plugin base topic.
+- Updated plugin route CSV import/export to include route-level MAC and resolved topic fields.
+- Updated plugin UI: route form now has `Request topic by MAC`, `MAC address`, a `Request topic` button, read-only topic sender result display, and route list MAC column.
+- Verified focused tests: `.venv\Scripts\python.exe -m pytest tests\test_mqtt_sink.py tests\test_plugin_forms.py tests\test_config_service.py tests\test_web_api.py tests\test_runtime_manager.py -q` -> `31 passed, 8 warnings`.
+- Verified full test suite: `.venv\Scripts\python.exe -m pytest -q` -> `110 passed, 13 warnings`.
+- Verified frontend syntax: `node --check src\industrial_gateway\web\static\app.js`.
+- Added project version source `industrial_gateway.__version__`; current app/package version is `1.0.3`.
+- Added `/api/app-info` so the web UI can display the application version.
+- Added small version display next to the topbar `Industrial Gateway` title.
+- Added Docker image version metadata through `IOT_GATHERING_VERSION`, `INDUSTRIAL_GATEWAY_VERSION`, and `org.opencontainers.image.version` in both runtime Dockerfiles.
+- Changed the default web service port from `50137` to `50200` because Windows reserved `50137` in the excluded TCP port range.
+- Updated the Devices tab layout: Device and New Tag forms now share a narrow left column; the right side shows a wider Devices table with group/name/driver/endpoint/mode and a separate Tags panel.
+- Removed Tags CSV import/export controls from the UI and removed Output Route CSV import/export controls from the plugin UI. Device CSV and plugin CSV controls remain.
+- Added MQTT plugin settings for topic sender refresh policy: `topic_request_on_start` and `topic_refresh_interval_s`.
+- Runtime now uses the MQTT plugin refresh policy to request enabled dynamic route topics from topic sender on start and periodically refresh them while running. Route MAC ownership remains on output routes.
+- Updated app/package/Docker default image version to `1.0.3` for the next registry build.

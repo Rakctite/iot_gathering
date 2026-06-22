@@ -106,8 +106,8 @@ def test_plugin_csv_import_and_export_round_trip(tmp_path):
                 "password": "secret",
                 "client_id": "gw",
                 "qos": 1,
-                "dynamic_topic_enabled": True,
-                "mac_address": "AA:BB",
+                "topic_request_on_start": True,
+                "topic_refresh_interval_s": 120,
             },
         }
     )
@@ -123,7 +123,11 @@ def test_plugin_csv_import_and_export_round_trip(tmp_path):
             "device_id": device["id"],
             "tag_group": "PHH01",
             "enabled": True,
-            "config": {"topic": "plant/opc/PHH01/data"},
+            "config": {
+                "topic": "plant/opc/PHH01/data",
+                "dynamic_topic_enabled": True,
+                "mac_address": "AA:BB",
+            },
         }
     )
 
@@ -151,14 +155,86 @@ def test_plugin_csv_import_and_export_round_trip(tmp_path):
     assert mqtt["enabled"] is True
     assert mqtt["selected"] is False
     assert mqtt["config"]["host"] == "broker"
-    assert mqtt["config"]["dynamic_topic_enabled"] is True
-    assert mqtt["config"]["mac_address"] == "AA:BB"
+    assert mqtt["config"]["topic_request_on_start"] is True
+    assert mqtt["config"]["topic_refresh_interval_s"] == 120
+    assert "dynamic_topic_enabled" not in mqtt["config"]
+    assert "mac_address" not in mqtt["config"]
     assert pg["enabled"] is False
     assert pg["selected"] is True
     assert pg["config"]["host"] == "db"
     assert routes[0]["device_name"] == "opc"
     assert routes[0]["tag_group"] == "PHH01"
-    assert routes[0]["config"] == {"topic": "plant/opc/PHH01/data"}
+    assert routes[0]["config"]["topic"] == "plant/opc/PHH01/data"
+    assert routes[0]["config"]["dynamic_topic_enabled"] is True
+    assert routes[0]["config"]["mac_address"] == "AA:BB"
+
+
+def test_resolve_output_route_topic_updates_route_config(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "device_group": "line",
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        }
+    )
+    route = service.save_output_route(
+        {
+            "device_id": device["id"],
+            "tag_group": "PHH01",
+            "enabled": True,
+            "config": {"dynamic_topic_enabled": True, "mac_address": "AA:BB"},
+        }
+    )
+
+    resolved = service.resolve_output_route_topic(
+        route["id"],
+        resolver=lambda mac, _mqtt_config: {
+            "topic": "3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/",
+            "sensor_count": 12,
+        },
+    )
+
+    assert resolved["resolved_topic"] == "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/"
+    assert resolved["sensor_count"] == 12
+    saved = service.list_output_routes()[0]
+    assert saved["config"]["resolved_topic"] == "C-S/3120/PH/PHH/LO001/MC01/-/OPCUA:PLC/"
+    assert saved["config"]["resolved_sensor_count"] == 12
+    assert saved["mac_address"] == "AA:BB"
+
+
+def test_resolve_output_route_topic_stores_error_result(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "device_group": "line",
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        }
+    )
+    route = service.save_output_route(
+        {
+            "device_id": device["id"],
+            "tag_group": "PHH01",
+            "enabled": True,
+            "config": {"dynamic_topic_enabled": True, "mac_address": "AA:BB"},
+        }
+    )
+
+    result = service.resolve_output_route_topic(
+        route["id"],
+        resolver=lambda _mac, _mqtt_config: (_ for _ in ()).throw(TimeoutError("topic response timeout")),
+    )
+
+    assert result["error"] == "topic response timeout"
+    saved = service.list_output_routes()[0]
+    assert saved["config"]["resolved_error"] == "topic response timeout"
 
 
 def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
@@ -178,7 +254,11 @@ def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
             "device_id": device["id"],
             "tag_group": "PHH01",
             "enabled": True,
-            "config": {"topic": "plant/opc/PHH01/data"},
+            "config": {
+                "topic": "plant/opc/PHH01/data",
+                "dynamic_topic_enabled": True,
+                "mac_address": "AA:BB",
+            },
         }
     )
 
@@ -201,7 +281,9 @@ def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
     assert routes[0]["device_id"] == imported_device["id"]
     assert routes[0]["device_name"] == "opc"
     assert routes[0]["tag_group"] == "PHH01"
-    assert routes[0]["config"] == {"topic": "plant/opc/PHH01/data"}
+    assert routes[0]["config"]["topic"] == "plant/opc/PHH01/data"
+    assert routes[0]["config"]["dynamic_topic_enabled"] is True
+    assert routes[0]["config"]["mac_address"] == "AA:BB"
 
 
 def test_device_csv_round_trips_mqtt_connection_fields(tmp_path):

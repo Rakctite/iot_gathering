@@ -46,7 +46,7 @@ $env:INDUSTRIAL_GATEWAY_SESSION_SECRET="replace-with-random-secret"
 industrial-gateway-web
 ```
 
-The web service listens on `0.0.0.0:50137` by default. Use LAN or VPN access for
+The web service listens on `0.0.0.0:50200` by default. Use LAN or VPN access for
 the first release. Do not expose this port directly to the public internet.
 
 The app stores its SQLite configuration at:

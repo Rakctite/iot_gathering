@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from collections.abc import AsyncIterator
@@ -9,6 +10,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Request, Response, 
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from industrial_gateway import __version__
 from industrial_gateway.config_schema import driver_schema, plugin_schema
 from industrial_gateway.services.config_service import ConfigService
 from industrial_gateway.services.runtime_manager import RuntimeManager
@@ -89,6 +91,10 @@ def create_app(
     @app.get("/api/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.get("/api/app-info")
+    def app_info() -> dict[str, str]:
+        return {"name": "Industrial Gateway", "version": os.getenv("INDUSTRIAL_GATEWAY_VERSION", __version__)}
 
     @app.get("/api/schema/drivers")
     def get_driver_schema(_user: dict[str, str] = Depends(session_dependency)):
@@ -203,6 +209,10 @@ def create_app(
     @app.put("/api/plugin-routes/{route_id}")
     def update_plugin_route(route_id: int, payload: dict, _user: dict[str, str] = Depends(session_dependency)):
         return config_service.save_output_route({"id": route_id, **payload})
+
+    @app.post("/api/plugin-routes/{route_id}/resolve-topic")
+    def resolve_plugin_route_topic(route_id: int, _user: dict[str, str] = Depends(session_dependency)):
+        return config_service.resolve_output_route_topic(route_id)
 
     @app.delete("/api/plugin-routes/{route_id}")
     def delete_plugin_route(route_id: int, _user: dict[str, str] = Depends(session_dependency)):

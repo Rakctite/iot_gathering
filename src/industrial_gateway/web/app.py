@@ -29,13 +29,13 @@ def _default_log_root() -> Path:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run the Industrial Gateway web service")
-    parser.add_argument("--host", default=os.getenv("INDUSTRIAL_GATEWAY_HOST", "0.0.0.0"))
-    parser.add_argument("--port", type=int, default=int(os.getenv("INDUSTRIAL_GATEWAY_PORT", "50137")))
+    parser.add_argument("--host", default=os.getenv("INDUSTRIAL_GATEWAY_HOST", "0.0.0.0")) 
+    parser.add_argument("--port", type=int, default=int(os.getenv("INDUSTRIAL_GATEWAY_PORT", "50200")))
     parser.add_argument("--store", default=os.getenv("INDUSTRIAL_GATEWAY_STORE", str(_default_store_path())))
     parser.add_argument("--log-root", default=os.getenv("INDUSTRIAL_GATEWAY_LOG_ROOT", str(_default_log_root())))
     parser.add_argument("--session-secret", default=os.getenv("INDUSTRIAL_GATEWAY_SESSION_SECRET", "dev-session-secret"))
-    parser.add_argument("--admin-username", default=os.getenv("INDUSTRIAL_GATEWAY_ADMIN_USER", "admin"))
-    parser.add_argument("--admin-password", default=os.getenv("INDUSTRIAL_GATEWAY_ADMIN_PASSWORD", "admin"))
+    parser.add_argument("--admin-username", default=os.getenv("INDUSTRIAL_GATEWAY_ADMIN_USER", "iotsys"))
+    parser.add_argument("--admin-password", default=os.getenv("INDUSTRIAL_GATEWAY_ADMIN_PASSWORD", "iot123sys"))
     args = parser.parse_args()
 
     app = create_app(

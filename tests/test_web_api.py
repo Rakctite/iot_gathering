@@ -65,11 +65,8 @@ def test_device_tag_plugin_api_round_trip(tmp_path):
             "enabled": True,
             "config": {
                 "topic": "plant/temp/current",
-                "host": "route-broker",
-                "port": 1883,
-                "base_topic": "route",
-                "client_id": "route",
-                "qos": 0,
+                "dynamic_topic_enabled": True,
+                "mac_address": "AA:BB",
             },
         },
     )
@@ -79,7 +76,12 @@ def test_device_tag_plugin_api_round_trip(tmp_path):
     assert routes[0]["device_name"] == "plc-1"
     assert routes[0]["tag_group"] == "temp"
     assert routes[0]["sink_type"] == "mqtt"
-    assert routes[0]["config"] == {"topic": "plant/temp/current"}
+    assert routes[0]["mac_address"] == "AA:BB"
+    assert routes[0]["config"] == {
+        "topic": "plant/temp/current",
+        "dynamic_topic_enabled": True,
+        "mac_address": "AA:BB",
+    }
 
 
 def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
@@ -94,6 +96,15 @@ def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
     assert plugins.status_code == 200
     assert list(plugins.json()) == ["mqtt"]
     assert plugins.json()["mqtt"]["fields"][0]["key"] == "host"
+
+
+def test_app_info_api_exposes_version(tmp_path):
+    client = make_client(tmp_path)
+
+    response = client.get("/api/app-info")
+
+    assert response.status_code == 200
+    assert response.json() == {"name": "Industrial Gateway", "version": "1.0.3"}
 
 
 def test_runtime_status_endpoint_is_protected(tmp_path):
@@ -201,14 +212,15 @@ def test_plugin_csv_import_and_export(tmp_path):
     assert imported.json() == {"plugins": 1, "routes": 0}
     plugin = client.get("/api/plugins/mqtt").json()
     assert plugin["config"]["host"] == "broker"
-    assert plugin["config"]["dynamic_topic_enabled"] is True
+    assert "dynamic_topic_enabled" not in plugin["config"]
+    assert "mac_address" not in plugin["config"]
 
     exported = client.get("/api/plugins.csv")
 
     assert exported.status_code == 200
     assert "text/csv" in exported.headers["content-type"]
     assert "broker" in exported.text
-    assert "AA:BB" in exported.text
+    assert "AA:BB" not in exported.text
 
     device = client.post(
         "/api/devices",
@@ -223,7 +235,16 @@ def test_plugin_csv_import_and_export(tmp_path):
     ).json()
     client.post(
         "/api/plugin-routes",
-        json={"device_id": device["id"], "tag_group": "PHH01", "enabled": True, "config": {"topic": "plant/opc/PHH01/data"}},
+        json={
+            "device_id": device["id"],
+            "tag_group": "PHH01",
+            "enabled": True,
+            "config": {
+                "topic": "plant/opc/PHH01/data",
+                "dynamic_topic_enabled": True,
+                "mac_address": "AA:BB",
+            },
+        },
     )
 
     exported_with_route = client.get("/api/plugins.csv")
@@ -231,6 +252,7 @@ def test_plugin_csv_import_and_export(tmp_path):
     assert "route" in exported_with_route.text
     assert "PHH01" in exported_with_route.text
     assert "plant/opc/PHH01/data" in exported_with_route.text
+    assert "AA:BB" in exported_with_route.text
 
 
 def test_plugin_route_csv_import_and_export(tmp_path):
@@ -248,8 +270,8 @@ def test_plugin_route_csv_import_and_export(tmp_path):
     ).json()
     csv_text = "\n".join(
         [
-            "device_group,device_name,tag_group,sink_type,enabled,topic",
-            "line,opc,PHH01,mqtt,1,plant/opc/PHH01/data",
+            "device_group,device_name,tag_group,sink_type,enabled,topic,dynamic_topic_enabled,mac_address",
+            "line,opc,PHH01,mqtt,1,plant/opc/PHH01/data,1,AA:BB",
             "",
         ]
     )
@@ -260,10 +282,16 @@ def test_plugin_route_csv_import_and_export(tmp_path):
     assert imported.json() == {"routes": 1}
     route = client.get("/api/plugin-routes").json()[0]
     assert route["device_id"] == device["id"]
-    assert route["config"] == {"topic": "plant/opc/PHH01/data"}
+    assert route["mac_address"] == "AA:BB"
+    assert route["config"] == {
+        "topic": "plant/opc/PHH01/data",
+        "dynamic_topic_enabled": True,
+        "mac_address": "AA:BB",
+    }
 
     exported = client.get("/api/plugin-routes.csv")
 
     assert exported.status_code == 200
     assert "PHH01" in exported.text
     assert "plant/opc/PHH01/data" in exported.text
+    assert "AA:BB" in exported.text
