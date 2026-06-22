@@ -67,6 +67,36 @@ def test_tag_crud_round_trip(tmp_path):
     assert service.list_tags(device["id"]) == []
 
 
+def test_tag_crud_accepts_count_alias_for_modbus_read_count(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "name": "usb-modbus",
+            "driver_type": "modbus_serial",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"port": "COM3", "unit_id": 1},
+        }
+    )
+
+    tag = service.create_tag(
+        device["id"],
+        {
+            "name": "temperatures",
+            "address": 16,
+            "function": "input_register",
+            "data_type": "int16",
+            "count": 5,
+            "scale": 1.0,
+            "enabled": True,
+        },
+    )
+
+    assert tag["count"] == 5
+    assert tag["word_count"] == 5
+    assert service.list_tags(device["id"])[0]["count"] == 5
+
+
 def test_plugin_save_selects_sink(tmp_path):
     service = make_service(tmp_path)
 

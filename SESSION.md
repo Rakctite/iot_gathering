@@ -100,3 +100,6 @@
 - Built and pushed DB amd64 image `203.228.107.184:5000/btx/iot_gathering:1.0.3-db-amd64`.
 - Pushed DB amd64 registry digest: `sha256:4e2de43f00cda3063df4a18ebdae10942093a54f1fb218e37a72e578435a1f44`.
 - Decided not to retag or rebuild `1.0.3`: it remains the DB-free default/core image. Starting with the next version, use architecture-oriented tags where `amd` includes PostgreSQL DB plugin support and `arm` excludes DB plugins.
+- Updated Modbus tag count behavior for ctm replacement testing: API/UI now use `count` as the value count alias for existing `word_count` storage, Modbus reads use `data_type` word size multiplied by `count`, and multi-value reads return lists.
+- Updated the tag form so Modbus devices hide `NodeId`, show `Count`, and display data type labels with byte/word sizes.
+- Verified focused tests: `.venv\Scripts\python.exe -m pytest tests\test_modbus_driver.py tests\test_config_service.py tests\test_web_static.py tests\test_web_api.py -q` -> `29 passed, 10 warnings`.

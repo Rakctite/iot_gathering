@@ -194,8 +194,7 @@ def _decode_register_block(registers: list[int], block: _ReadBlock, timestamp: d
         count = _register_count(tag)
         try:
             value = _decode_registers(registers[offset : offset + count], tag)
-            if isinstance(value, (int, float)):
-                value = value * tag.scale
+            value = _apply_scale(value, tag.scale)
             results[tag.name] = TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             results[tag.name] = _bad(tag, timestamp, str(exc))
@@ -206,8 +205,13 @@ def _decode_bit_block(bits: list[bool], block: _ReadBlock, timestamp: datetime) 
     results = {}
     for tag in block.tags:
         offset = tag.address - block.start
+        count = _value_count(tag)
         try:
-            results[tag.name] = TagResult(tag.name, tag.address, bool(bits[offset]), "good", None, timestamp, tag_group=tag.tag_group)
+            values = [bool(value) for value in bits[offset : offset + count]]
+            if len(values) < count:
+                raise ValueError(f"not enough bits for {tag.name}")
+            value = values[0] if count == 1 else values
+            results[tag.name] = TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             results[tag.name] = _bad(tag, timestamp, str(exc))
     return results
@@ -215,13 +219,21 @@ def _decode_bit_block(bits: list[bool], block: _ReadBlock, timestamp: datetime) 
 
 def _item_count(tag: TagSpec) -> int:
     if tag.function in {"coil", "discrete_input"}:
-        return 1
+        return _value_count(tag)
     return _register_count(tag)
 
 
 def _register_count(tag: TagSpec) -> int:
     if tag.data_type == "string":
         return tag.word_count or 1
+    return _words_per_value(tag) * _value_count(tag)
+
+
+def _value_count(tag: TagSpec) -> int:
+    return tag.word_count or 1
+
+
+def _words_per_value(tag: TagSpec) -> int:
     if tag.data_type == "float64":
         return 4
     return 2 if tag.data_type in {"int32", "uint32", "float32"} else 1
@@ -230,6 +242,17 @@ def _register_count(tag: TagSpec) -> int:
 def _decode_registers(registers: list[int], tag: TagSpec) -> int | float | bool:
     if len(registers) < _register_count(tag):
         raise ValueError(f"not enough registers for {tag.name}")
+    if tag.data_type != "string" and _value_count(tag) > 1:
+        words_per_value = _words_per_value(tag)
+        values = []
+        for index in range(_value_count(tag)):
+            start = index * words_per_value
+            values.append(_decode_single_register_value(registers[start : start + words_per_value], tag))
+        return values
+    return _decode_single_register_value(registers, tag)
+
+
+def _decode_single_register_value(registers: list[int], tag: TagSpec) -> int | float | bool | str:
     if tag.data_type == "bool":
         return bool(registers[0])
     ordered = _apply_word_order(registers, tag)
@@ -250,6 +273,16 @@ def _decode_registers(registers: list[int], tag: TagSpec) -> int | float | bool:
     if tag.data_type == "float64":
         return struct.unpack(">d", raw.to_bytes(8, "big"))[0]
     raise ValueError(f"unsupported data type {tag.data_type}")
+
+
+def _apply_scale(value: Any, scale: float) -> Any:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value * scale
+    if isinstance(value, list):
+        return [_apply_scale(item, scale) for item in value]
+    return value
 
 
 def _apply_word_order(registers: list[int], tag: TagSpec) -> list[int]:

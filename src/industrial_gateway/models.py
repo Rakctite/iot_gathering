@@ -185,9 +185,9 @@ def _validate_common_tag_fields(tag: TagSpec) -> None:
     if tag.scale == 0:
         raise ValueError("tag scale cannot be zero")
     if tag.data_type == "string" and (tag.word_count is None or tag.word_count < 1):
-        raise ValueError("string tag word_count must be at least 1")
+        raise ValueError("string tag count must be at least 1")
     if tag.data_type != "string" and tag.word_count is not None and tag.word_count < 1:
-        raise ValueError("tag word_count must be at least 1")
+        raise ValueError("tag count must be at least 1")
     if tag.byte_order not in {"big", "little"}:
         raise ValueError("tag byte_order must be big or little")
     if tag.word_order not in {"big", "little"}:

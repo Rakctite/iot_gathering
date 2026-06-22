@@ -27,6 +27,7 @@ _TAG_CSV_FIELDS = [
     "data_type",
     "scale",
     "enabled",
+    "count",
     "word_count",
     "byte_order",
     "word_order",
@@ -68,6 +69,7 @@ _DEVICE_CSV_FIELDS = [
     "data_type",
     "scale",
     "tag_enabled",
+    "count",
     "word_count",
     "byte_order",
     "word_order",
@@ -514,7 +516,7 @@ def _device_from_payload(device_id: int | None, payload: dict[str, Any]) -> Devi
 
 
 def _tag_from_payload(tag_id: int | None, device_id: int, payload: dict[str, Any]) -> TagSpec:
-    word_count_value = payload.get("word_count")
+    word_count_value = payload.get("count", payload.get("word_count"))
     word_count = None if word_count_value in (None, "") else int(word_count_value)
     return TagSpec(
         id=tag_id,
@@ -556,6 +558,7 @@ def _tag_to_dict(tag: TagSpec) -> dict[str, Any]:
         "data_type": tag.data_type,
         "scale": tag.scale,
         "enabled": tag.enabled,
+        "count": tag.word_count,
         "word_count": tag.word_count,
         "byte_order": tag.byte_order,
         "word_order": tag.word_order,
@@ -675,7 +678,7 @@ def _tag_from_csv_row(row: dict[str, Any], driver_type: str, tag_name_key: str) 
         data_type=(row.get("data_type") or tag_type_choices_for_driver(driver_type)[0]).strip(),
         scale=float(row.get("scale") or 1.0),
         enabled=_csv_bool(row.get("tag_enabled" if tag_name_key == "tag_name" else "enabled"), True),
-        word_count=_csv_optional_int(row.get("word_count")),
+        word_count=_csv_optional_int(row.get("count", row.get("word_count"))),
         byte_order=(row.get("byte_order") or "big").strip(),
         word_order=(row.get("word_order") or "big").strip(),
     )
@@ -755,6 +758,7 @@ def _device_csv_row(device: DeviceSpec, tag: TagSpec | None) -> dict[str, Any]:
                 "data_type": tag.data_type,
                 "scale": tag.scale,
                 "tag_enabled": int(tag.enabled),
+                "count": tag.word_count or "",
                 "word_count": tag.word_count or "",
                 "byte_order": tag.byte_order,
                 "word_order": tag.word_order,
@@ -773,6 +777,7 @@ def _tag_csv_row(tag: TagSpec) -> dict[str, Any]:
         "data_type": tag.data_type,
         "scale": tag.scale,
         "enabled": int(tag.enabled),
+        "count": tag.word_count or "",
         "word_count": tag.word_count or "",
         "byte_order": tag.byte_order,
         "word_order": tag.word_order,

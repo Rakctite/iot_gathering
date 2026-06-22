@@ -47,6 +47,15 @@ class InputRegisterModbusClient:
         return FakeResponse(registers=[123])
 
 
+class SequentialInputRegisterModbusClient:
+    def __init__(self):
+        self.calls = []
+
+    def read_input_registers(self, address, *, count, device_id):
+        self.calls.append(("input", address, count, device_id))
+        return FakeResponse(registers=list(range(1, count + 1)))
+
+
 def test_modbus_driver_reads_contiguous_register_tags_in_one_block():
     device = DeviceSpec(
         id=1,
@@ -140,3 +149,26 @@ def test_modbus_driver_passes_unit_id_as_device_id_for_input_registers():
     assert driver.client.calls == [("input", 0, 1, 7)]
     assert results[0].quality == "good"
     assert results[0].value == 12.3
+
+
+def test_modbus_driver_uses_value_count_to_calculate_register_count_for_serial_input_registers():
+    device = DeviceSpec(
+        id=1,
+        name="pressure",
+        driver_type="modbus_serial",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 7},
+    )
+    tags = [
+        TagSpec(name="five_ints", address=10, function="input_register", data_type="int16", word_count=5),
+        TagSpec(name="two_floats", address=20, function="input_register", data_type="float32", word_count=2),
+    ]
+    driver = ModbusTcpDriver(device, tags)
+    driver.client = SequentialInputRegisterModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("input", 10, 5, 7), ("input", 20, 4, 7)]
+    assert results[0].value == [1, 2, 3, 4, 5]
+    assert len(results[1].value) == 2

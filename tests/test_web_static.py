@@ -100,3 +100,13 @@ def test_runtime_events_update_local_state_without_refetching_status():
     assert "function scheduleRuntimeRender" in script
     assert "requestAnimationFrame" in script
     assert 'if (message.type === "log" || message.type === "tag_update" || message.type === "server_status") loadRuntime();' not in script
+
+
+def test_tag_form_exposes_modbus_count_and_readable_data_type_labels():
+    script = (Path(__file__).parents[1] / "src" / "industrial_gateway" / "web" / "static" / "app.js").read_text()
+
+    assert "isModbusDriver(driverType)" in script
+    assert 'name="count"' in script
+    assert "NodeId" in script
+    assert "int16 (2 bytes, 1 word)" in script
+    assert "float64 (8 bytes, 4 words)" in script
