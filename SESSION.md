@@ -22,8 +22,8 @@
 - Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
 - Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
 - Planned next variants:
-  - DB environment: PostgreSQL plugin enabled, topic sender later.
-  - ARM/core environment: DB plugins excluded, hardware drivers and MQTT only.
+  - Keep the existing `1.0.3` tag as-is: default/core image without DB plugins.
+  - From the next release onward, publish architecture-oriented tags instead of `db-amd64`: `amd` includes PostgreSQL DB plugin support, and `arm` excludes DB plugins for hardware driver plus MQTT use.
 
 ## Latest State
 - 2026-06-18: Working tree was clean and tracking `origin/main`.
@@ -39,7 +39,7 @@
 - Review runtime defaults for `message_stale_timeout_s` and `status_publish_interval_s` in production settings.
 - Decide whether the paho MQTT callback deprecation warning needs follow-up.
 - Decide whether topic responder settings should later move from environment variables into the web UI/plugin settings.
-- Decide final image tags for DB amd64 and ARM/core builds before registry push.
+- Apply the next-release image tag policy: keep `1.0.3` unchanged, then build future releases as `amd` with PostgreSQL included and `arm` without DB plugins.
 
 ## Work Log
 
@@ -99,3 +99,4 @@
 - Pushed registry digest: `sha256:9439276a5ecc8bc88e8dac383d0861b4dfcffebab4d99eef85370a1c7dbbc45e`.
 - Built and pushed DB amd64 image `203.228.107.184:5000/btx/iot_gathering:1.0.3-db-amd64`.
 - Pushed DB amd64 registry digest: `sha256:4e2de43f00cda3063df4a18ebdae10942093a54f1fb218e37a72e578435a1f44`.
+- Decided not to retag or rebuild `1.0.3`: it remains the DB-free default/core image. Starting with the next version, use architecture-oriented tags where `amd` includes PostgreSQL DB plugin support and `arm` excludes DB plugins.
