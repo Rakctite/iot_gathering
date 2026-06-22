@@ -94,3 +94,6 @@
 - Added MQTT plugin settings for topic sender refresh policy: `topic_request_on_start` and `topic_refresh_interval_s`.
 - Runtime now uses the MQTT plugin refresh policy to request enabled dynamic route topics from topic sender on start and periodically refresh them while running. Route MAC ownership remains on output routes.
 - Updated app/package/Docker default image version to `1.0.3` for the next registry build.
+- Committed and pushed `b3273f2 Add route topic refresh and release 1.0.3`.
+- Built and pushed Docker image `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
+- Pushed registry digest: `sha256:9439276a5ecc8bc88e8dac383d0861b4dfcffebab4d99eef85370a1c7dbbc45e`.
