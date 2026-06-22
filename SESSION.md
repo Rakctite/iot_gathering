@@ -97,3 +97,5 @@
 - Committed and pushed `b3273f2 Add route topic refresh and release 1.0.3`.
 - Built and pushed Docker image `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
 - Pushed registry digest: `sha256:9439276a5ecc8bc88e8dac383d0861b4dfcffebab4d99eef85370a1c7dbbc45e`.
+- Built and pushed DB amd64 image `203.228.107.184:5000/btx/iot_gathering:1.0.3-db-amd64`.
+- Pushed DB amd64 registry digest: `sha256:4e2de43f00cda3063df4a18ebdae10942093a54f1fb218e37a72e578435a1f44`.
