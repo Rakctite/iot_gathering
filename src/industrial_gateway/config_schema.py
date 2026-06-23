@@ -30,7 +30,6 @@ class PluginField:
 
 
 _COMMON_MODBUS_LIMITS = (
-    ConnectionField("unit_id", "Device ID (Slave ID)", "int", 1, minimum=1, maximum=247),
     ConnectionField("max_block_gap", "Max block gap", "int", 4, minimum=0, maximum=1000),
     ConnectionField("max_registers_per_read", "Max registers/read", "int", 125, minimum=1, maximum=125),
     ConnectionField("max_bits_per_read", "Max bits/read", "int", 2000, minimum=1, maximum=2000),

@@ -36,6 +36,7 @@ class ConfigStore:
                     data_type TEXT NOT NULL,
                     scale REAL NOT NULL,
                     enabled INTEGER NOT NULL,
+                    unit_id INTEGER,
                     word_count INTEGER,
                     byte_order TEXT NOT NULL DEFAULT 'big',
                     word_order TEXT NOT NULL DEFAULT 'big',
@@ -149,8 +150,8 @@ class ConfigStore:
                 cursor = conn.execute(
                     """
                     INSERT INTO tags
-                    (device_id, tag_group, name, address, function, data_type, scale, enabled, word_count, byte_order, word_order, node_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (device_id, tag_group, name, address, function, data_type, scale, enabled, unit_id, word_count, byte_order, word_order, node_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         tag.device_id,
@@ -161,6 +162,7 @@ class ConfigStore:
                         tag.data_type,
                         tag.scale,
                         int(tag.enabled),
+                        tag.unit_id,
                         tag.word_count,
                         tag.byte_order,
                         tag.word_order,
@@ -172,7 +174,7 @@ class ConfigStore:
                 """
                 UPDATE tags
                 SET device_id = ?, tag_group = ?, name = ?, address = ?, function = ?, data_type = ?, scale = ?, enabled = ?,
-                    word_count = ?, byte_order = ?, word_order = ?
+                    unit_id = ?, word_count = ?, byte_order = ?, word_order = ?
                     , node_id = ?
                 WHERE id = ?
                 """,
@@ -185,6 +187,7 @@ class ConfigStore:
                     tag.data_type,
                     tag.scale,
                     int(tag.enabled),
+                    tag.unit_id,
                     tag.word_count,
                     tag.byte_order,
                     tag.word_order,
@@ -199,6 +202,7 @@ class ConfigStore:
             rows = conn.execute(
                 """
                 SELECT id, device_id, name, address, function, data_type, scale, enabled,
+                       unit_id,
                        tag_group, word_count, byte_order, word_order
                        , node_id
                 FROM tags
@@ -218,6 +222,7 @@ class ConfigStore:
                 data_type=row["data_type"],
                 scale=row["scale"],
                 enabled=bool(row["enabled"]),
+                unit_id=row["unit_id"],
                 word_count=row["word_count"],
                 byte_order=row["byte_order"],
                 word_order=row["word_order"],
@@ -433,6 +438,8 @@ class ConfigStore:
         columns = {row["name"] for row in conn.execute("PRAGMA table_info(tags)").fetchall()}
         if "word_count" not in columns:
             conn.execute("ALTER TABLE tags ADD COLUMN word_count INTEGER")
+        if "unit_id" not in columns:
+            conn.execute("ALTER TABLE tags ADD COLUMN unit_id INTEGER")
         if "byte_order" not in columns:
             conn.execute("ALTER TABLE tags ADD COLUMN byte_order TEXT NOT NULL DEFAULT 'big'")
         if "word_order" not in columns:

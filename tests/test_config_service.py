@@ -97,6 +97,35 @@ def test_tag_crud_accepts_count_alias_for_modbus_read_count(tmp_path):
     assert service.list_tags(device["id"])[0]["count"] == 5
 
 
+def test_tag_crud_accepts_unit_id_for_modbus_slave_id(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "name": "usb-modbus",
+            "driver_type": "modbus_serial",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"port": "/dev/ttyUSB_plate"},
+        }
+    )
+
+    tag = service.create_tag(
+        device["id"],
+        {
+            "name": "slave-two-pressure",
+            "address": 16,
+            "function": "input_register",
+            "data_type": "int16",
+            "unit_id": 2,
+            "scale": 1.0,
+            "enabled": True,
+        },
+    )
+
+    assert tag["unit_id"] == 2
+    assert service.list_tags(device["id"])[0]["unit_id"] == 2
+
+
 def test_plugin_save_selects_sink(tmp_path):
     service = make_service(tmp_path)
 

@@ -41,6 +41,7 @@ class TagSpec:
     device_id: int | None = None
     scale: float = 1.0
     enabled: bool = True
+    unit_id: int | None = None
     word_count: int | None = None
     byte_order: str = "big"
     word_order: str = "big"
@@ -147,6 +148,8 @@ def validate_modbus_tag(tag: TagSpec) -> None:
         raise ValueError("tag address must be zero or greater")
     if tag.function not in {"holding_register", "input_register", "coil", "discrete_input"}:
         raise ValueError(f"unsupported Modbus function: {tag.function}")
+    if tag.unit_id is not None and not 1 <= tag.unit_id <= 247:
+        raise ValueError("tag unit_id must be between 1 and 247")
     _validate_common_tag_fields(tag)
 
 

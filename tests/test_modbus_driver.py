@@ -151,6 +151,28 @@ def test_modbus_driver_passes_unit_id_as_device_id_for_input_registers():
     assert results[0].value == 12.3
 
 
+def test_modbus_driver_uses_tag_unit_id_as_device_id_when_present():
+    device = DeviceSpec(
+        id=1,
+        name="pressure",
+        driver_type="modbus_serial",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 7},
+    )
+    tags = [
+        TagSpec(name="slave_two", address=0, function="input_register", data_type="int16", unit_id=2),
+        TagSpec(name="slave_three", address=1, function="input_register", data_type="int16", unit_id=3),
+    ]
+    driver = ModbusTcpDriver(device, tags)
+    driver.client = InputRegisterModbusClient()
+
+    results = driver.read_tags()
+
+    assert driver.client.calls == [("input", 0, 1, 2), ("input", 1, 1, 3)]
+    assert [result.quality for result in results] == ["good", "good"]
+
+
 def test_modbus_driver_uses_value_count_to_calculate_register_count_for_serial_input_registers():
     device = DeviceSpec(
         id=1,

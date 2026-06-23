@@ -255,7 +255,7 @@ function renderTagForm() {
   const driverType = state.selectedDevice?.driver_type || "modbus_tcp";
   const schema = state.driverSchema[driverType] || { tag_functions: [], tag_types: [] };
   const modbus = isModbusDriver(driverType);
-  const data = state.selectedTag || { tag_group: "", name: "", node_id: "", address: 0, count: "", word_count: "", function: schema.tag_functions[0] || "", data_type: schema.tag_types[0] || "", scale: 1, enabled: true };
+  const data = state.selectedTag || { tag_group: "", name: "", node_id: "", address: 0, unit_id: "", count: "", word_count: "", function: schema.tag_functions[0] || "", data_type: schema.tag_types[0] || "", scale: 1, enabled: true };
   const functionOptions = schema.tag_functions.map(item => `<option value="${escapeHtml(item)}" ${item === data.function ? "selected" : ""}>${escapeHtml(item)}</option>`).join("");
   const typeOptions = schema.tag_types.map(item => `<option value="${escapeHtml(item)}" ${item === data.data_type ? "selected" : ""}>${escapeHtml(dataTypeLabel(item))}</option>`).join("");
   const countValue = data.count ?? data.word_count ?? "";
@@ -265,6 +265,7 @@ function renderTagForm() {
     <label>Name <input name="name" value="${escapeHtml(data.name || "")}" required></label>
     ${modbus ? "" : `<label>NodeId <input name="node_id" value="${escapeHtml(data.node_id || "")}"></label>`}
     <label>Address <input name="address" type="number" value="${data.address || 0}"></label>
+    ${modbus ? `<label>Device ID (Slave ID) <input name="unit_id" type="number" min="1" max="247" value="${escapeHtml(data.unit_id || "")}" placeholder="1"></label>` : ""}
     ${modbus ? `<label>Count <input name="count" type="number" min="1" value="${escapeHtml(countValue)}" placeholder="1"></label>` : ""}
     <label>Function <select name="function">${functionOptions}</select></label>
     <label>Data type <select name="data_type">${typeOptions}</select></label>
@@ -432,6 +433,9 @@ async function saveTag(event) {
   };
   if (form.elements.count && form.elements.count.value !== "") {
     payload.count = Number(form.elements.count.value);
+  }
+  if (form.elements.unit_id && form.elements.unit_id.value !== "") {
+    payload.unit_id = Number(form.elements.unit_id.value);
   }
   if (state.selectedTag && state.selectedTag.id) {
     await api(`/api/tags/${state.selectedTag.id}`, {

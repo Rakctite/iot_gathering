@@ -13,7 +13,6 @@ def test_modbus_tcp_connection_form_uses_network_fields():
     assert [field.key for field in fields] == [
         "host",
         "port",
-        "unit_id",
         "max_block_gap",
         "max_registers_per_read",
         "max_bits_per_read",
@@ -26,7 +25,7 @@ def test_modbus_serial_connection_form_uses_serial_fields():
     fields = connection_fields_for_driver("modbus_serial")
 
     assert [field.key for field in fields][:6] == ["port", "baudrate", "parity", "stopbits", "bytesize", "timeout"]
-    assert next(field for field in fields if field.key == "unit_id").label == "Device ID (Slave ID)"
+    assert "unit_id" not in [field.key for field in fields]
     assert default_connection_for_driver("modbus_serial")["baudrate"] == 9600
 
 
@@ -60,7 +59,7 @@ def test_connection_normalization_preserves_existing_values_and_fills_missing_de
 
     assert normalized["host"] == "10.0.0.10"
     assert normalized["port"] == 502
-    assert normalized["unit_id"] == 1
+    assert "unit_id" not in normalized
 
 
 def test_tag_choices_follow_selected_driver():

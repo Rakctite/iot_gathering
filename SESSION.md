@@ -108,3 +108,5 @@
 - Added a Tags view toggle: `View all` shows all tags sorted by group/name with normal paging, and `Sort by group` restores the group-by-group paging mode.
 - Verified full test suite after the UI changes: `.venv\Scripts\python.exe -m pytest -q` -> `116 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
 - Refined the Devices tab layout again: Device and Tag forms now sit side by side, Devices and Tags lists sit to the right with the device list scrolling after five rows, and `View all` now loads tags from every device with a Device column.
+- Moved Modbus `Device ID (Slave ID)` from device connection settings to tag settings by adding `TagSpec.unit_id` and `tags.unit_id`; Modbus reads now group requests by function and tag-level unit id, falling back to legacy device `unit_id` when a tag has none.
+- Verified full test suite after tag-level slave id changes: `.venv\Scripts\python.exe -m pytest -q` -> `118 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.

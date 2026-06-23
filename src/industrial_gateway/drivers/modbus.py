@@ -72,6 +72,7 @@ class ModbusSerialDriver:
 @dataclass(frozen=True)
 class _ReadBlock:
     function: str
+    unit_id: int
     start: int
     count: int
     tags: list[TagSpec]
@@ -84,7 +85,8 @@ def _read_tags_grouped(client: Any, device: DeviceSpec, tags: list[TagSpec]) -> 
     results_by_name: dict[str, TagResult] = {}
     max_block_gap = int(device.connection.get("max_block_gap", 4))
     max_counts = _max_counts_from_connection(device.connection)
-    for block in _plan_blocks(tags, max_block_gap=max_block_gap, max_counts=max_counts):
+    default_unit_id = int(device.connection.get("unit_id", 1))
+    for block in _plan_blocks(tags, default_unit_id=default_unit_id, max_block_gap=max_block_gap, max_counts=max_counts):
         results_by_name.update(_read_block(client, device, block))
     return [results_by_name.get(tag.name) or _bad(tag, datetime.now(timezone.utc), "tag was not read") for tag in tags]
 
@@ -92,24 +94,23 @@ def _read_tags_grouped(client: Any, device: DeviceSpec, tags: list[TagSpec]) -> 
 def _read_block(client: Any, device: DeviceSpec, block: _ReadBlock) -> dict[str, TagResult]:
     timestamp = datetime.now(timezone.utc)
     try:
-        unit_id = int(device.connection.get("unit_id", 1))
         if block.function == "holding_register":
-            response = client.read_holding_registers(block.start, count=block.count, device_id=unit_id)
+            response = client.read_holding_registers(block.start, count=block.count, device_id=block.unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_register_block(response.registers, block, timestamp)
         if block.function == "input_register":
-            response = client.read_input_registers(block.start, count=block.count, device_id=unit_id)
+            response = client.read_input_registers(block.start, count=block.count, device_id=block.unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_register_block(response.registers, block, timestamp)
         if block.function == "coil":
-            response = client.read_coils(block.start, count=block.count, device_id=unit_id)
+            response = client.read_coils(block.start, count=block.count, device_id=block.unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_bit_block(response.bits, block, timestamp)
         if block.function == "discrete_input":
-            response = client.read_discrete_inputs(block.start, count=block.count, device_id=unit_id)
+            response = client.read_discrete_inputs(block.start, count=block.count, device_id=block.unit_id)
             if response.isError():
                 return {tag.name: _bad(tag, timestamp, str(response)) for tag in block.tags}
             return _decode_bit_block(response.bits, block, timestamp)
@@ -120,6 +121,7 @@ def _read_block(client: Any, device: DeviceSpec, block: _ReadBlock) -> dict[str,
 
 def _plan_blocks(
     tags: list[TagSpec],
+    default_unit_id: int = 1,
     max_block_gap: int = 4,
     max_counts: dict[str, int] | None = None,
 ) -> list[_ReadBlock]:
@@ -129,11 +131,11 @@ def _plan_blocks(
         "coil": MAX_BIT_READ_COUNT,
         "discrete_input": MAX_BIT_READ_COUNT,
     }
-    grouped: dict[str, list[TagSpec]] = defaultdict(list)
+    grouped: dict[tuple[str, int], list[TagSpec]] = defaultdict(list)
     for tag in tags:
-        grouped[tag.function].append(tag)
+        grouped[(tag.function, tag.unit_id or default_unit_id)].append(tag)
     blocks: list[_ReadBlock] = []
-    for function, function_tags in grouped.items():
+    for (function, unit_id), function_tags in grouped.items():
         max_count = max_counts[function]
         sorted_tags = sorted(function_tags, key=lambda tag: tag.address)
         current: list[TagSpec] = []
@@ -152,12 +154,12 @@ def _plan_blocks(
                 current.append(tag)
                 end = next_end
                 continue
-            blocks.append(_ReadBlock(function, start, end - start, current))
+            blocks.append(_ReadBlock(function, unit_id, start, end - start, current))
             current = [tag]
             start = tag.address
             end = tag_end
         if current:
-            blocks.append(_ReadBlock(function, start, end - start, current))
+            blocks.append(_ReadBlock(function, unit_id, start, end - start, current))
     return blocks
 
 
