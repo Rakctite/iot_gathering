@@ -6,7 +6,7 @@ const state = {
   tagGroupPage: 0,
   tagListPage: 0,
   tagViewMode: "group",
-  tagPageSize: 12,
+  tagPageSize: 21,
   driverSchema: {},
   pluginSchema: {},
   selectedPlugin: "mqtt",

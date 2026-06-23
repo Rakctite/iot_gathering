@@ -79,7 +79,7 @@ def test_runtime_tab_has_pagination_controls():
     assert "pluginRouteFields" not in script
     assert 'name="topic"' in script
     assert "tag_group" in script
-    assert "tagPageSize: 12" in script
+    assert "tagPageSize: 21" in script
     assert "runtimePageRows" in script
     assert "runtimePageSize: 12" in script
     assert "runtime_log_enabled" in script
