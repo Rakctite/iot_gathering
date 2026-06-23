@@ -287,6 +287,14 @@ function renderTagForm() {
 
 async function loadTags() {
   const tbody = document.getElementById("tagList");
+  if (state.tagViewMode === "all") {
+    state.tagRows = await loadAllDeviceTags();
+    if (state.selectedTag) {
+      state.selectedTag = state.tagRows.find(tag => tag.id === state.selectedTag.id) || null;
+    }
+    renderTags();
+    return;
+  }
   if (!state.selectedDevice) {
     state.tagRows = [];
     tbody.innerHTML = "";
@@ -300,17 +308,43 @@ async function loadTags() {
   renderTags();
 }
 
+async function loadAllDeviceTags() {
+  const groups = await Promise.all(state.devices.map(async device => {
+    const tags = await api(`/api/devices/${device.id}/tags`);
+    return tags.map(tag => ({
+      ...tag,
+      device_group: device.device_group || "",
+      device_name: device.name,
+      source_device_id: device.id
+    }));
+  }));
+  return groups.flat();
+}
+
 function renderTags() {
   const page = tagPageRows(state.tagRows || []);
+  renderTagTableHeader();
   document.getElementById("tagList").innerHTML = page.rows.map(tag =>
-    `<tr class="${state.selectedTag && state.selectedTag.id === tag.id ? "active" : ""}" data-tag-id="${tag.id}"><td>${escapeHtml(tag.tag_group || "")}</td><td>${escapeHtml(tag.name)}</td><td>${escapeHtml(tag.function)}</td><td>${escapeHtml(tag.data_type)}</td></tr>`
+    state.tagViewMode === "all"
+      ? `<tr class="${state.selectedTag && state.selectedTag.id === tag.id ? "active" : ""}" data-tag-id="${tag.id}"><td>${escapeHtml(tag.device_name || "")}</td><td>${escapeHtml(tag.tag_group || "")}</td><td>${escapeHtml(tag.name)}</td><td>${escapeHtml(tag.function)}</td><td>${escapeHtml(tag.data_type)}</td></tr>`
+      : `<tr class="${state.selectedTag && state.selectedTag.id === tag.id ? "active" : ""}" data-tag-id="${tag.id}"><td>${escapeHtml(tag.tag_group || "")}</td><td>${escapeHtml(tag.name)}</td><td>${escapeHtml(tag.function)}</td><td>${escapeHtml(tag.data_type)}</td></tr>`
   ).join("");
   document.querySelectorAll("#tagList tr").forEach(row => row.onclick = () => selectTag(Number(row.dataset.tagId)));
   renderTagPageLabels(page);
 }
 
+function renderTagTableHeader() {
+  document.getElementById("tagListHead").innerHTML = state.tagViewMode === "all"
+    ? "<tr><th>Device</th><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr>"
+    : "<tr><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr>";
+}
+
 function selectTag(tagId) {
   state.selectedTag = state.tagRows.find(tag => tag.id === tagId) || null;
+  if (state.tagViewMode === "all" && state.selectedTag?.source_device_id) {
+    state.selectedDevice = state.devices.find(device => device.id === state.selectedTag.source_device_id) || state.selectedDevice;
+    renderDevices();
+  }
   renderTags();
   renderTagForm();
 }
@@ -318,7 +352,7 @@ function selectTag(tagId) {
 function tagPageRows(rows) {
   if (state.tagViewMode === "all") {
     const sortedRows = [...rows].sort((a, b) =>
-      `${a.tag_group || "default"}\u0000${a.name}`.localeCompare(`${b.tag_group || "default"}\u0000${b.name}`)
+      `${a.device_group || ""}\u0000${a.device_name || ""}\u0000${a.tag_group || "default"}\u0000${a.name}`.localeCompare(`${b.device_group || ""}\u0000${b.device_name || ""}\u0000${b.tag_group || "default"}\u0000${b.name}`)
     );
     const pageCount = Math.max(1, Math.ceil(sortedRows.length / state.tagPageSize));
     state.tagListPage = clampPage(state.tagListPage, pageCount);
@@ -365,11 +399,11 @@ function renderTagPageLabels(page) {
   document.getElementById("tagListPageLabel").textContent = `${state.tagListPage + 1}/${page.pageCount} (${page.totalRows})`;
 }
 
-function toggleTagViewMode() {
+async function toggleTagViewMode() {
   state.tagViewMode = state.tagViewMode === "all" ? "group" : "all";
   state.tagGroupPage = 0;
   state.tagListPage = 0;
-  renderTags();
+  await loadTags();
 }
 
 function turnTagPage(kind, delta) {

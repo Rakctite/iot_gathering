@@ -107,3 +107,4 @@
 - Updated the Devices tab layout so the Tag form sits beside the Devices table, with the Tags table below.
 - Added a Tags view toggle: `View all` shows all tags sorted by group/name with normal paging, and `Sort by group` restores the group-by-group paging mode.
 - Verified full test suite after the UI changes: `.venv\Scripts\python.exe -m pytest -q` -> `116 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
+- Refined the Devices tab layout again: Device and Tag forms now sit side by side, Devices and Tags lists sit to the right with the device list scrolling after five rows, and `View all` now loads tags from every device with a Device column.

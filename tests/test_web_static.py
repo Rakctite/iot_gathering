@@ -38,10 +38,11 @@ def test_runtime_tab_has_pagination_controls():
     assert "runtime-log-scroll" in html
     assert "runtimeLogEnabled" in html
     assert "device-layout" in html
-    assert "device-editor-stack" in html
-    assert "device-main-stack" in html
-    assert "device-top-grid" in html
+    assert "device-editor-grid" in html
+    assert "device-data-stack" in html
+    assert "device-list-scroll" in html
     assert "device-list-table" in html
+    assert "tagListHead" in html
     assert "tagViewMode" in html
     assert "pluginRouteForm" in html
     assert "pluginRouteList" in html
@@ -60,6 +61,9 @@ def test_runtime_tab_has_pagination_controls():
     assert "tagViewMode: \"group\"" in script
     assert "toggleTagViewMode" in script
     assert "tagViewMode === \"all\"" in script
+    assert "loadAllDeviceTags" in script
+    assert "renderTagTableHeader" in script
+    assert "device_name" in script
     assert "deviceEndpoint" in script
     assert "deviceMode" in script
     assert "deleteDevice" in script
@@ -92,8 +96,9 @@ def test_runtime_tab_has_pagination_controls():
     assert "width: max-content" in styles
     assert "max-width: 0" in styles
     assert "body { margin: 0; font-family: Segoe UI, Arial, sans-serif; color: #172026; background: #f4f6f8; overflow-x: hidden; }" in styles
-    assert ".device-layout { display: grid; grid-template-columns: minmax(260px, 340px) minmax(0, 1fr)" in styles
-    assert ".device-top-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px)" in styles
+    assert ".device-layout { display: grid; grid-template-columns: minmax(560px, 700px) minmax(0, 1fr)" in styles
+    assert ".device-editor-grid { display: grid; grid-template-columns: minmax(260px, 320px) minmax(280px, 360px)" in styles
+    assert ".device-list-scroll { max-height: 198px; overflow-y: auto;" in styles
     assert ".device-list-table th:nth-child(4), .device-list-table td:nth-child(4)" in styles
     assert ".runtime-grid { width: 100%; max-width: calc(100vw - 36px)" in styles
     assert ".runtime-tags-panel, .runtime-log-panel { min-height: 0; min-width: 0; max-width: 100%; overflow: hidden;" in styles

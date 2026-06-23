@@ -30,28 +30,28 @@
         </nav>
         <section id="devicesTab" class="tab-panel">
           <div class="device-layout">
-            <div class="device-editor-stack">
+            <div class="device-editor-grid">
               <form id="deviceForm" class="panel"></form>
+              <form id="tagForm" class="panel"></form>
             </div>
-            <div class="device-main-stack">
-              <div class="device-top-grid">
-                <section class="device-list-panel panel">
-                  <div class="table-header">
-                    <h2>Devices</h2>
-                    <div class="table-actions">
-                      <button id="newDevice">New device</button>
-                      <button id="importDevices">Import CSV</button>
-                      <button id="exportDevices">Export CSV</button>
-                      <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
-                    </div>
+            <div class="device-data-stack">
+              <section class="device-list-panel panel">
+                <div class="table-header">
+                  <h2>Devices</h2>
+                  <div class="table-actions">
+                    <button id="newDevice">New device</button>
+                    <button id="importDevices">Import CSV</button>
+                    <button id="exportDevices">Export CSV</button>
+                    <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
                   </div>
+                </div>
+                <div class="device-list-scroll">
                   <table class="fixed-table device-list-table">
                     <thead><tr><th>Group</th><th>Name</th><th>Driver</th><th>Endpoint</th><th>Mode</th></tr></thead>
                     <tbody id="deviceList"></tbody>
                   </table>
-                </section>
-                <form id="tagForm" class="panel"></form>
-              </div>
+                </div>
+              </section>
               <section class="tags-panel panel">
               <div class="table-header">
                 <h2>Tags</h2>
@@ -65,7 +65,7 @@
                   <button id="nextTagListPage" type="button" title="Next tag page">&gt;</button>
                 </div>
               </div>
-              <table class="fixed-table"><thead><tr><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
+              <table class="fixed-table"><thead id="tagListHead"><tr><th>Group</th><th>Name</th><th>Function</th><th>Type</th></tr></thead><tbody id="tagList"></tbody></table>
               </section>
             </div>
           </div>
