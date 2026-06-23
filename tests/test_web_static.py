@@ -46,6 +46,7 @@ def test_runtime_tab_has_pagination_controls():
     assert "tagViewMode" in html
     assert "pluginRouteForm" in html
     assert "pluginRouteList" in html
+    assert "plugin-editor-grid" in html
     assert "pluginRouteEditor" in html
     assert "pluginRouteListPanel" in html
     assert "importPlugins" in html
@@ -101,6 +102,10 @@ def test_runtime_tab_has_pagination_controls():
     assert ".device-list-scroll { max-height: 198px; overflow-y: auto;" in styles
     assert ".device-list-table th:nth-child(4), .device-list-table td:nth-child(4)" in styles
     assert ".runtime-grid { width: 100%; max-width: calc(100vw - 36px)" in styles
+    assert ".runtime-tags-panel { min-height: 430px;" in styles
+    assert ".runtime-table { width: 100%; max-width: 100%; min-width: 0; table-layout: fixed; flex: 0 0 auto;" in styles
+    assert ".plugin-layout { display: grid; grid-template-columns: minmax(560px, 700px) minmax(0, 1fr)" in styles
+    assert ".plugin-editor-grid { display: grid; grid-template-columns: minmax(260px, 320px) minmax(280px, 360px)" in styles
     assert ".runtime-tags-panel, .runtime-log-panel { min-height: 0; min-width: 0; max-width: 100%; overflow: hidden;" in styles
 
 

@@ -111,3 +111,5 @@
 - Moved Modbus `Device ID (Slave ID)` from device connection settings to tag settings by adding `TagSpec.unit_id` and `tags.unit_id`; Modbus reads now group requests by function and tag-level unit id, falling back to legacy device `unit_id` when a tag has none.
 - Verified full test suite after tag-level slave id changes: `.venv\Scripts\python.exe -m pytest -q` -> `118 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
 - Increased the Devices tab tag list page size from 12 to 21 rows.
+- Updated Runtime tab table sizing so sparse runtime tag pages keep the maximum panel height with empty space instead of stretching rows.
+- Updated Plugins tab layout to mirror the Devices tab: Output Plugin and Output Routes forms sit side by side, with Route List in a narrower right panel.

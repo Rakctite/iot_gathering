@@ -35,9 +35,10 @@ textarea { resize: vertical; }
 .tags-panel { min-width: 0; overflow: hidden; }
 .table-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .panel { background: #fff; border: 1px solid #d8dee6; padding: 14px; }
-.plugin-layout { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(0, 4fr); gap: 16px; align-items: start; min-width: 0; }
+.plugin-layout { display: grid; grid-template-columns: minmax(560px, 700px) minmax(0, 1fr); gap: 12px; align-items: start; min-width: 0; }
+.plugin-editor-grid { display: grid; grid-template-columns: minmax(260px, 320px) minmax(280px, 360px); gap: 8px; align-items: start; min-width: 0; }
 .plugin-settings { min-width: 0; display: grid; gap: 10px; align-content: start; }
-.plugin-settings h2, .plugin-routes-panel h2 { margin: 0; font-size: 18px; }
+.plugin-settings h2, .plugin-routes-panel h2, #pluginRouteEditor h2 { margin: 0; font-size: 18px; }
 .plugin-routes-panel { min-width: 0; overflow: hidden; }
 .plugin-routes-panel table { table-layout: fixed; }
 .list { list-style: none; padding: 0; margin: 0 0 10px; background: #fff; border: 1px solid #d8dee6; min-height: 320px; }
@@ -68,11 +69,12 @@ pre { min-height: 180px; max-height: 280px; overflow: auto; background: #111820;
 #runtimeTab { overflow-x: hidden; }
 .runtime-grid { width: 100%; max-width: calc(100vw - 36px); height: max(640px, calc(100dvh - 190px)); display: grid; grid-template-rows: minmax(0, 3fr) minmax(0, 1fr); gap: 12px; min-width: 0; overflow-x: hidden; }
 .runtime-tags-panel, .runtime-log-panel { min-height: 0; min-width: 0; max-width: 100%; overflow: hidden; display: flex; flex-direction: column; }
+.runtime-tags-panel { min-height: 430px; }
 .runtime-panel-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; min-width: 0; }
 .runtime-page-controls { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; max-width: min(720px, 100%); min-width: 0; }
 .runtime-page-controls span { max-width: 140px; min-width: 48px; text-align: center; color: #33414f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .runtime-page-controls button { width: 28px; min-width: 28px; padding: 5px 0; }
-.runtime-table { width: 100%; max-width: 100%; min-width: 0; table-layout: fixed; flex: 1; }
+.runtime-table { width: 100%; max-width: 100%; min-width: 0; table-layout: fixed; flex: 0 0 auto; }
 .runtime-table th, .runtime-table td { max-width: 0; height: 32px; padding: 5px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .runtime-table th:nth-child(1), .runtime-table td:nth-child(1) { width: 15%; }
 .runtime-table th:nth-child(2), .runtime-table td:nth-child(2) { width: 12%; }
@@ -83,4 +85,4 @@ pre { min-height: 180px; max-height: 280px; overflow: auto; background: #111820;
 .runtime-log-panel h2, .runtime-tags-panel h2 { margin: 0 0 8px; }
 .runtime-log-scroll { position: relative; flex: 1; width: 100%; max-width: 100%; min-width: 0; min-height: 0; overflow-x: auto; overflow-y: auto; background: #111820; }
 .runtime-log-panel pre { position: absolute; inset: 0 auto auto 0; display: block; width: max-content; min-width: 100%; min-height: 100%; max-height: none; margin: 0; overflow: visible; white-space: pre; contain: content; }
-@media (max-width: 900px) { .split, .device-layout, .device-editor-grid, .plugin-layout { grid-template-columns: 1fr; } .runtime-actions, .runtime-panel-header { flex-wrap: wrap; } }
+@media (max-width: 900px) { .split, .device-layout, .device-editor-grid, .plugin-layout, .plugin-editor-grid { grid-template-columns: 1fr; } .runtime-actions, .runtime-panel-header { flex-wrap: wrap; } }
