@@ -657,16 +657,25 @@ def _ctm_status_message(
     error_msg: str | None,
     timestamp: datetime,
 ) -> BatchMessage:
-    update_time = _iso_millis(timestamp)
+    update_time = _telegraf_status_time(timestamp)
+    system_sensor = {
+        "sensor_code": "SYSTEM",
+        "conn_status": conn_status,
+        "last_seen": update_time,
+        "health_score": 100.0 if conn_status == "on" else 0.0,
+        "error_msg": error_msg,
+        "update_time": update_time,
+    }
     return BatchMessage(
         topic=f"{measurement.topic.rstrip('/')}/status",
         payload={
-            "timestamp": measurement.payload.get("timestamp", update_time),
-            "sensors": [
+            "timestamp": update_time,
+            "sensors": [system_sensor]
+            + [
                 {
                     "sensor_code": tag.name,
                     "conn_status": conn_status if tag.quality == "good" and not tag.error else "off",
-                    "last_seen": _iso_millis(tag.timestamp),
+                    "last_seen": _telegraf_status_time(tag.timestamp),
                     "health_score": 100.0 if conn_status == "on" and tag.quality == "good" and not tag.error else 0.0,
                     "error_msg": tag.error if tag.error else error_msg,
                     "update_time": update_time,
@@ -683,6 +692,15 @@ def _iso_millis(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat(timespec="milliseconds")
+
+
+def _telegraf_status_time(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    offset = value.strftime("%z")
+    if len(offset) >= 3:
+        offset = offset[:3]
+    return f"{value.strftime('%Y-%m-%d %H:%M:%S')}.{value.microsecond // 1000:03d}{offset}"
 
 
 def _tag_key(tag: TagResult) -> str:

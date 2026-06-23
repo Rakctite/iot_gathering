@@ -226,15 +226,23 @@ def test_sink_publisher_converts_results_to_batch_message():
     assert sink.messages[0].topic == "plant/press/data"
     assert sink.messages[0].payload["tags"][0]["value"] == 12.3
     assert sink.messages[1].topic == "plant/press/data/status"
-    assert sink.messages[1].payload["timestamp"] == "2026-05-16T00:00:01.000+00:00"
+    assert sink.messages[1].payload["timestamp"] == "2026-05-16 00:00:01.000+00"
     assert sink.messages[1].payload["sensors"] == [
+        {
+            "sensor_code": "SYSTEM",
+            "conn_status": "on",
+            "last_seen": "2026-05-16 00:00:01.000+00",
+            "health_score": 100.0,
+            "error_msg": None,
+            "update_time": "2026-05-16 00:00:01.000+00",
+        },
         {
             "sensor_code": "bar",
             "conn_status": "on",
-            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "last_seen": "2026-05-16 00:00:00.000+00",
             "health_score": 100.0,
             "error_msg": None,
-            "update_time": "2026-05-16T00:00:01.000+00:00",
+            "update_time": "2026-05-16 00:00:01.000+00",
         }
     ]
     assert logs.empty()
@@ -546,7 +554,7 @@ def test_sink_publisher_republishes_cached_values_without_new_results():
     assert len(status_messages) == 2
     assert [tag["value"] for tag in data_messages[0].payload["tags"]] == [12.3, 45.6]
     assert [tag["value"] for tag in data_messages[1].payload["tags"]] == [12.3, 45.6]
-    assert [sensor["conn_status"] for sensor in status_messages[0].payload["sensors"]] == ["on", "on"]
+    assert [sensor["conn_status"] for sensor in status_messages[0].payload["sensors"]] == ["on", "on", "on"]
 
 
 def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeout():
@@ -599,12 +607,20 @@ def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeo
     status_payload = sink.messages[2].payload
     assert status_payload["sensors"] == [
         {
-            "sensor_code": "bar",
+            "sensor_code": "SYSTEM",
             "conn_status": "off",
-            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "last_seen": "2026-05-16 00:00:06.000+00",
             "health_score": 0.0,
             "error_msg": "message timeout",
-            "update_time": "2026-05-16T00:00:06.000+00:00",
+            "update_time": "2026-05-16 00:00:06.000+00",
+        },
+        {
+            "sensor_code": "bar",
+            "conn_status": "off",
+            "last_seen": "2026-05-16 00:00:00.000+00",
+            "health_score": 0.0,
+            "error_msg": "message timeout",
+            "update_time": "2026-05-16 00:00:06.000+00",
         }
     ]
 
@@ -844,6 +860,10 @@ def test_sink_publisher_splits_opcua_cached_values_by_phh_node_prefix():
     status_messages = [message for message in sink.messages if message.topic.endswith("/status")]
     assert [message.payload["tags"][0]["value"] for message in data_messages] == [11, 88]
     assert [message.payload["sensors"][0]["sensor_code"] for message in status_messages] == [
+        "SYSTEM",
+        "SYSTEM",
+    ]
+    assert [message.payload["sensors"][1]["sensor_code"] for message in status_messages] == [
         "PV_CUR_MOLD_N11",
         "PV_CUR_MOLD_N11",
     ]
