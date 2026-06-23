@@ -360,13 +360,12 @@ class SinkPublisher(threading.Thread):
                 continue
             groups: dict[str | None, list[TagResult]] = {}
             for tag in snapshot["tags"].values():
-                if tag.quality != "good" or tag.error:
-                    continue
                 groups.setdefault(_tag_output_group(tag), []).append(tag)
             for group, tags in groups.items():
-                if not tags:
+                good_tags = [tag for tag in tags if tag.quality == "good" and not tag.error]
+                if not good_tags:
                     continue
-                message, plugin_type = self._measurement_message(device, tags, group, now)
+                message, plugin_type = self._measurement_message(device, good_tags, group, now)
                 self._publish_message(self.sink, plugin_type, message, device, len(tags))
                 self._publish_message(
                     self.sink,
@@ -406,6 +405,7 @@ class SinkPublisher(threading.Thread):
         snapshot["last_received_at"] = received_at
         snapshot["last_source_timestamp"] = result.timestamp
         has_bad_tag = False
+        has_good_tag = False
         for tag in result.tags:
             snapshot["tags"][_tag_key(tag)] = tag
             if tag.quality == "bad" or tag.error:
@@ -424,6 +424,8 @@ class SinkPublisher(threading.Thread):
                         "error": tag.error,
                     },
                 )
+            else:
+                has_good_tag = True
             self._status(
                 {
                     "type": "tag_update",
@@ -437,7 +439,9 @@ class SinkPublisher(threading.Thread):
                     "error": tag.error,
                 }
             )
-        if has_bad_tag:
+        if has_good_tag:
+            self._set_device_status(result.device, "good", "data received", received_at, received_at, result.timestamp)
+        elif has_bad_tag:
             self._set_device_status(result.device, "bad", "tag read failed", received_at, received_at, result.timestamp)
         else:
             self._set_device_status(result.device, "good", "data received", received_at, received_at, result.timestamp)

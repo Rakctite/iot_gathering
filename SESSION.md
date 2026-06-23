@@ -116,3 +116,5 @@
 - Added MQTT Output Route support for `system_heartbeat`: selecting `System Heartbeat` as the route device publishes `SYSTEM` status heartbeats to the resolved route topic plus `/status`.
 - Heartbeat routes reuse existing topic sender MAC resolution/refresh, publish telegraf-compatible status timestamps, and stay excluded from normal device/tag route matching.
 - Verified after heartbeat route changes: `.venv\Scripts\python.exe -m pytest -q` -> `121 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
+- Updated mixed Modbus read publish behavior: if some tags fail and some succeed, successful tags still publish measurement data while the status payload includes both failed/off and successful/on tags.
+- Verified after mixed tag publish changes: `.venv\Scripts\python.exe -m pytest -q` -> `122 passed, 14 warnings`.

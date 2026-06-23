@@ -590,6 +590,73 @@ def test_sink_publisher_republishes_cached_values_without_new_results():
     assert [sensor["conn_status"] for sensor in status_messages[0].payload["sensors"]] == ["on", "on"]
 
 
+def test_sink_publisher_publishes_good_tags_and_all_status_when_some_tags_fail():
+    inbox = Queue()
+    sink = FakeSink()
+    device = DeviceSpec(
+        id=2,
+        name="press",
+        driver_type="modbus_serial",
+        enabled=True,
+        poll_interval_ms=100,
+        connection={},
+    )
+    inbox.put(
+        ReadResult(
+            device=device,
+            timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+            tags=[
+                TagResult(
+                    name="slave_1_temp",
+                    address=0,
+                    value=None,
+                    quality="bad",
+                    error="timeout",
+                    timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+                    tag_group="line",
+                ),
+                TagResult(
+                    name="slave_2_temp",
+                    address=10,
+                    value=27.5,
+                    quality="good",
+                    error=None,
+                    timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+                    tag_group="line",
+                ),
+            ],
+        )
+    )
+    publisher = SinkPublisher(sink, MqttConfig(base_topic="plant"), inbox, stale_timeout_s=15)
+
+    publisher.publish_once(now=datetime(2026, 5, 16, 0, 0, 0, tzinfo=timezone.utc))
+    publisher.publish_cached(datetime(2026, 5, 16, 0, 0, 1, tzinfo=timezone.utc))
+
+    data_messages = [message for message in sink.messages if not message.topic.endswith("/status")]
+    status_messages = [message for message in sink.messages if message.topic.endswith("/status")]
+    assert len(data_messages) == 1
+    assert [tag["name"] for tag in data_messages[0].payload["tags"]] == ["slave_2_temp"]
+    assert len(status_messages) == 1
+    assert status_messages[0].payload["sensors"] == [
+        {
+            "sensor_code": "slave_1_temp",
+            "conn_status": "off",
+            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "health_score": 0.0,
+            "error_msg": "timeout",
+            "update_time": "2026-05-16T00:00:01.000+00:00",
+        },
+        {
+            "sensor_code": "slave_2_temp",
+            "conn_status": "on",
+            "last_seen": "2026-05-16T00:00:00.000+00:00",
+            "health_score": 100.0,
+            "error_msg": None,
+            "update_time": "2026-05-16T00:00:01.000+00:00",
+        },
+    ]
+
+
 def test_sink_publisher_publishes_stale_status_and_stops_cached_data_after_timeout():
     inbox = Queue()
     sink = FakeSink()
