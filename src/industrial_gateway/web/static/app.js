@@ -5,6 +5,7 @@ const state = {
   tagRows: [],
   tagGroupPage: 0,
   tagListPage: 0,
+  tagViewMode: "group",
   tagPageSize: 12,
   driverSchema: {},
   pluginSchema: {},
@@ -315,6 +316,21 @@ function selectTag(tagId) {
 }
 
 function tagPageRows(rows) {
+  if (state.tagViewMode === "all") {
+    const sortedRows = [...rows].sort((a, b) =>
+      `${a.tag_group || "default"}\u0000${a.name}`.localeCompare(`${b.tag_group || "default"}\u0000${b.name}`)
+    );
+    const pageCount = Math.max(1, Math.ceil(sortedRows.length / state.tagPageSize));
+    state.tagListPage = clampPage(state.tagListPage, pageCount);
+    const start = state.tagListPage * state.tagPageSize;
+    return {
+      rows: sortedRows.slice(start, start + state.tagPageSize),
+      groups: [],
+      selectedGroup: "",
+      pageCount,
+      totalRows: sortedRows.length
+    };
+  }
   const groups = uniqueValues(rows.map(row => row.tag_group || "default"));
   state.tagGroupPage = clampPage(state.tagGroupPage, groups.length);
   const selectedGroup = groups[state.tagGroupPage] || "";
@@ -334,10 +350,26 @@ function tagPageRows(rows) {
 }
 
 function renderTagPageLabels(page) {
+  const modeButton = document.getElementById("tagViewMode");
+  if (modeButton) {
+    modeButton.textContent = state.tagViewMode === "all" ? "Sort by group" : "View all";
+  }
+  const groupControlsHidden = state.tagViewMode === "all";
+  ["prevTagGroupPage", "tagGroupPageLabel", "nextTagGroupPage"].forEach(id => {
+    const element = document.getElementById(id);
+    if (element) element.classList.toggle("hidden", groupControlsHidden);
+  });
   document.getElementById("tagGroupPageLabel").textContent = page.groups.length
     ? `${state.tagGroupPage + 1}/${page.groups.length} ${shortLabel(page.selectedGroup)}`
     : "0/0";
   document.getElementById("tagListPageLabel").textContent = `${state.tagListPage + 1}/${page.pageCount} (${page.totalRows})`;
+}
+
+function toggleTagViewMode() {
+  state.tagViewMode = state.tagViewMode === "all" ? "group" : "all";
+  state.tagGroupPage = 0;
+  state.tagListPage = 0;
+  renderTags();
 }
 
 function turnTagPage(kind, delta) {
@@ -701,6 +733,7 @@ document.getElementById("deviceCsvFile").onchange = async event => {
 };
 document.getElementById("importPlugins").onclick = () => document.getElementById("pluginCsvFile").click();
 document.getElementById("exportPlugins").onclick = () => downloadCsv("/api/plugins.csv");
+document.getElementById("tagViewMode").onclick = toggleTagViewMode;
 document.getElementById("prevTagGroupPage").onclick = () => turnTagPage("group", -1);
 document.getElementById("nextTagGroupPage").onclick = () => turnTagPage("group", 1);
 document.getElementById("prevTagListPage").onclick = () => turnTagPage("tag", -1);

@@ -103,3 +103,7 @@
 - Updated Modbus tag count behavior for ctm replacement testing: API/UI now use `count` as the value count alias for existing `word_count` storage, Modbus reads use `data_type` word size multiplied by `count`, and multi-value reads return lists.
 - Updated the tag form so Modbus devices hide `NodeId`, show `Count`, and display data type labels with byte/word sizes.
 - Verified focused tests: `.venv\Scripts\python.exe -m pytest tests\test_modbus_driver.py tests\test_config_service.py tests\test_web_static.py tests\test_web_api.py -q` -> `29 passed, 10 warnings`.
+- Renamed the Modbus `unit_id` connection label to `Device ID (Slave ID)` in the UI while keeping the internal key as `unit_id` for compatibility.
+- Updated the Devices tab layout so the Tag form sits beside the Devices table, with the Tags table below.
+- Added a Tags view toggle: `View all` shows all tags sorted by group/name with normal paging, and `Sort by group` restores the group-by-group paging mode.
+- Verified full test suite after the UI changes: `.venv\Scripts\python.exe -m pytest -q` -> `116 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.

@@ -32,28 +32,31 @@
           <div class="device-layout">
             <div class="device-editor-stack">
               <form id="deviceForm" class="panel"></form>
-              <form id="tagForm" class="panel"></form>
             </div>
-            <div class="device-data-stack">
-              <section class="device-list-panel panel">
-                <div class="table-header">
-                  <h2>Devices</h2>
-                  <div class="table-actions">
-                    <button id="newDevice">New device</button>
-                    <button id="importDevices">Import CSV</button>
-                    <button id="exportDevices">Export CSV</button>
-                    <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
+            <div class="device-main-stack">
+              <div class="device-top-grid">
+                <section class="device-list-panel panel">
+                  <div class="table-header">
+                    <h2>Devices</h2>
+                    <div class="table-actions">
+                      <button id="newDevice">New device</button>
+                      <button id="importDevices">Import CSV</button>
+                      <button id="exportDevices">Export CSV</button>
+                      <input id="deviceCsvFile" type="file" accept=".csv,text/csv" hidden>
+                    </div>
                   </div>
-                </div>
-                <table class="fixed-table device-list-table">
-                  <thead><tr><th>Group</th><th>Name</th><th>Driver</th><th>Endpoint</th><th>Mode</th></tr></thead>
-                  <tbody id="deviceList"></tbody>
-                </table>
-              </section>
+                  <table class="fixed-table device-list-table">
+                    <thead><tr><th>Group</th><th>Name</th><th>Driver</th><th>Endpoint</th><th>Mode</th></tr></thead>
+                    <tbody id="deviceList"></tbody>
+                  </table>
+                </section>
+                <form id="tagForm" class="panel"></form>
+              </div>
               <section class="tags-panel panel">
               <div class="table-header">
                 <h2>Tags</h2>
                 <div class="page-controls">
+                  <button id="tagViewMode" type="button" title="Toggle tag view">Sort by group</button>
                   <button id="prevTagGroupPage" type="button" title="Previous group">&lt;</button>
                   <span id="tagGroupPageLabel"></span>
                   <button id="nextTagGroupPage" type="button" title="Next group">&gt;</button>
