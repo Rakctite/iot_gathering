@@ -113,5 +113,3 @@
 - Increased the Devices tab tag list page size from 12 to 21 rows.
 - Updated Runtime tab table sizing so sparse runtime tag pages keep the maximum panel height with empty space instead of stretching rows.
 - Updated Plugins tab layout to mirror the Devices tab: Output Plugin and Output Routes forms sit side by side, with Route List in a narrower right panel.
-- Updated CTM status publishing to use the telegraf-compatible timestamp format `YYYY-MM-DD HH:MM:SS.mmm+00` and to prepend a `SYSTEM` status sensor to every status payload.
-- Verified full test suite after SYSTEM status publishing changes: `.venv\Scripts\python.exe -m pytest -q` -> `118 passed, 14 warnings`.
