@@ -279,6 +279,9 @@ class RuntimeManager:
                     sink_type=route.sink_type,
                     mqtt_config=mqtt_config,
                     topic=_route_topic(base_topic, _route_publish_topic(route.config)),
+                    route_kind=str(route.config.get("route_kind") or "data"),
+                    heartbeat_interval_s=_float_config(route.config, "heartbeat_interval_s", 1.0),
+                    sensor_code=str(route.config.get("sensor_code") or "SYSTEM"),
                 )
             )
         return routes

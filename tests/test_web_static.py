@@ -79,6 +79,10 @@ def test_runtime_tab_has_pagination_controls():
     assert 'sink_type: "mqtt"' in script
     assert "pluginRouteFields" not in script
     assert 'name="topic"' in script
+    assert "System Heartbeat" in script
+    assert "system_heartbeat" in script
+    assert 'name="heartbeat_interval_s"' in script
+    assert 'name="sensor_code"' in script
     assert "tag_group" in script
     assert "tagPageSize: 21" in script
     assert "runtimePageRows" in script

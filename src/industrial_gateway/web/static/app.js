@@ -601,11 +601,13 @@ async function loadPluginRoutes() {
 function renderPluginRouteForm(route) {
   const form = document.getElementById("pluginRouteForm");
   const data = route || { device_id: state.selectedDevice?.id || "", tag_group: "", sink_type: "mqtt", enabled: true, config: {} };
+  const isHeartbeat = data.config?.route_kind === "system_heartbeat";
   state.selectedRoutePlugin = "mqtt";
   const deviceOptions = [
     `<option value="">All devices</option>`,
+    `<option value="system_heartbeat" ${isHeartbeat ? "selected" : ""}>System Heartbeat</option>`,
     ...state.devices.map(device =>
-      `<option value="${device.id}" ${Number(data.device_id) === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`
+      `<option value="${device.id}" ${!isHeartbeat && Number(data.device_id) === device.id ? "selected" : ""}>${escapeHtml(device.name)}</option>`
     )
   ].join("");
   form.innerHTML = `
@@ -613,6 +615,8 @@ function renderPluginRouteForm(route) {
     <label>Device <select name="device_id">${deviceOptions}</select></label>
     <label>Tag group <input name="tag_group" value="${escapeHtml(data.tag_group || "")}" placeholder="empty = all groups"></label>
     <label>Topic <input name="topic" value="${escapeHtml(data.config?.topic || "")}" placeholder="empty = auto topic"></label>
+    <label>Heartbeat sec <input name="heartbeat_interval_s" type="number" min="1" value="${escapeHtml(data.config?.heartbeat_interval_s || 1)}"></label>
+    <label>Sensor code <input name="sensor_code" value="${escapeHtml(data.config?.sensor_code || "SYSTEM")}"></label>
     <label class="checkbox-row"><input name="dynamic_topic_enabled" type="checkbox" ${data.config?.dynamic_topic_enabled ? "checked" : ""}> Request topic by MAC</label>
     <label>MAC address <input name="mac_address" value="${escapeHtml(data.config?.mac_address || "")}"></label>
     <button id="resolvePluginRouteTopic" type="button">Request topic</button>
@@ -660,13 +664,17 @@ async function savePluginRoute(event) {
 
 function pluginRoutePayloadFromForm(form) {
   const existingConfig = state.selectedPluginRoute?.config || {};
+  const routeKind = form.elements.device_id.value === "system_heartbeat" ? "system_heartbeat" : "data";
   return {
-    device_id: form.elements.device_id.value || null,
-    tag_group: form.elements.tag_group.value,
+    device_id: routeKind === "system_heartbeat" ? "system_heartbeat" : form.elements.device_id.value || null,
+    tag_group: routeKind === "system_heartbeat" ? "" : form.elements.tag_group.value,
     sink_type: "mqtt",
     enabled: form.elements.enabled.checked,
     config: {
+      route_kind: routeKind,
       topic: form.elements.topic.value,
+      heartbeat_interval_s: form.elements.heartbeat_interval_s.value,
+      sensor_code: form.elements.sensor_code.value || "SYSTEM",
       dynamic_topic_enabled: form.elements.dynamic_topic_enabled.checked,
       mac_address: form.elements.mac_address.value,
       resolved_topic: existingConfig.resolved_topic || "",

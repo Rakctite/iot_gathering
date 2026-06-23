@@ -208,6 +208,42 @@ def test_output_routes_use_resolved_topic_for_dynamic_route(tmp_path):
     manager.shutdown()
 
 
+def test_output_routes_include_system_heartbeat_route_without_data_matching(tmp_path):
+    store = make_store(tmp_path)
+    store.save_sink_config(
+        SinkConfig(
+            sink_type="mqtt",
+            enabled=True,
+            config={"host": "broker", "port": 1884, "base_topic": "plant", "client_id": "gw", "qos": 1},
+        )
+    )
+    store.save_output_route(
+        OutputRouteConfig(
+            device_id=None,
+            tag_group="",
+            enabled=True,
+            config={
+                "route_kind": "system_heartbeat",
+                "dynamic_topic_enabled": True,
+                "resolved_topic": "C-S/3120/PH/CTM/LO001/PH01/-/SYSTEM",
+                "heartbeat_interval_s": 1,
+                "sensor_code": "SYSTEM",
+            },
+        )
+    )
+    manager = RuntimeManager(store, sink_registry={"mqtt": FakeSink})
+
+    routes = manager._output_routes()
+
+    assert len(routes) == 1
+    assert routes[0].route_kind == "system_heartbeat"
+    assert routes[0].topic == "C-S/3120/PH/CTM/LO001/PH01/-/SYSTEM"
+    assert routes[0].heartbeat_interval_s == 1
+    assert routes[0].sensor_code == "SYSTEM"
+
+    manager.shutdown()
+
+
 def test_start_requests_dynamic_route_topics_from_plugin_setting(tmp_path):
     FakeWorker.started = 0
     FakePublisher.instances = []

@@ -85,6 +85,9 @@ _PLUGIN_CSV_FIELDS = [
     "device_name",
     "tag_group",
     "topic",
+    "route_kind",
+    "heartbeat_interval_s",
+    "sensor_code",
     "host",
     "port",
     "base_topic",
@@ -115,7 +118,10 @@ _PLUGIN_ROUTE_CSV_FIELDS = [
     "tag_group",
     "sink_type",
     "enabled",
+    "route_kind",
     "topic",
+    "heartbeat_interval_s",
+    "sensor_code",
     "dynamic_topic_enabled",
     "mac_address",
     "resolved_topic",
@@ -253,7 +259,11 @@ class ConfigService:
         for route in self.store.list_output_routes():
             payload = _route_to_dict(route)
             device = devices.get(route.device_id)
-            payload["device_name"] = device.name if device is not None else "All devices"
+            payload["device_name"] = (
+                "System Heartbeat"
+                if payload["config"].get("route_kind") == "system_heartbeat"
+                else device.name if device is not None else "All devices"
+            )
             rows.append(payload)
         return rows
 
@@ -261,16 +271,21 @@ class ConfigService:
         route_id = payload.get("id")
         sink_type = "mqtt"
         device_id_value = payload.get("device_id")
-        device_id = None if device_id_value in (None, "", "all") else int(device_id_value)
+        config = _route_config(payload)
+        is_system_heartbeat = config.get("route_kind") == "system_heartbeat" or device_id_value == "system_heartbeat"
+        if is_system_heartbeat:
+            config["route_kind"] = "system_heartbeat"
+            config.setdefault("sensor_code", "SYSTEM")
+        device_id = None if device_id_value in (None, "", "all", "system_heartbeat") else int(device_id_value)
         if device_id is not None:
             self.get_device(device_id)
         route = OutputRouteConfig(
             id=None if route_id in (None, "") else int(route_id),
             device_id=device_id,
-            tag_group=str(payload.get("tag_group", "")).strip(),
+            tag_group="" if is_system_heartbeat else str(payload.get("tag_group", "")).strip(),
             sink_type=sink_type,
             enabled=bool(payload.get("enabled", True)),
-            config=_route_config(payload),
+            config=config,
         )
         saved_id = self.store.save_output_route(route)
         return next(route for route in self.list_output_routes() if route["id"] == saved_id)
@@ -595,12 +610,23 @@ def _route_to_dict(route: OutputRouteConfig) -> dict[str, Any]:
         "resolved_sensor_count": config.get("resolved_sensor_count", ""),
         "resolved_error": config.get("resolved_error", ""),
         "resolved_at": config.get("resolved_at", ""),
+        "route_kind": config.get("route_kind", "data"),
+        "heartbeat_interval_s": config.get("heartbeat_interval_s", ""),
+        "sensor_code": config.get("sensor_code", "SYSTEM"),
     }
 
 
 def _route_config(payload: dict[str, Any]) -> dict[str, Any]:
     config = payload.get("config") or {}
     values: dict[str, Any] = {}
+    route_kind = str(config.get("route_kind") or payload.get("route_kind") or "data").strip()
+    if route_kind == "system_heartbeat":
+        values["route_kind"] = route_kind
+        sensor_code = str(config.get("sensor_code") or payload.get("sensor_code") or "SYSTEM").strip()
+        values["sensor_code"] = sensor_code or "SYSTEM"
+        heartbeat_interval = config.get("heartbeat_interval_s", payload.get("heartbeat_interval_s"))
+        if heartbeat_interval not in (None, ""):
+            values["heartbeat_interval_s"] = max(1, int(float(heartbeat_interval)))
     topic = str(config.get("topic") or payload.get("topic") or "").strip()
     if topic:
         values["topic"] = topic
@@ -696,6 +722,8 @@ def _device_import_key(device: DeviceSpec) -> tuple[str, str]:
 
 
 def _csv_route_device_id(row: dict[str, Any], devices_by_key: dict[tuple[str, str], DeviceSpec]) -> int | None:
+    if (row.get("route_kind") or "").strip() == "system_heartbeat":
+        return None
     device_name = (row.get("device_name") or "").strip()
     if not device_name:
         return None
@@ -811,11 +839,18 @@ def _plugin_route_csv_row(route: OutputRouteConfig, device: DeviceSpec | None) -
     return {
         "record_type": "route",
         "device_group": "" if device is None else device.device_group,
-        "device_name": "" if device is None else device.name,
+        "device_name": (
+            "System Heartbeat"
+            if config.get("route_kind") == "system_heartbeat"
+            else "" if device is None else device.name
+        ),
         "tag_group": route.tag_group,
         "sink_type": route.sink_type,
         "enabled": int(route.enabled),
+        "route_kind": config.get("route_kind", "data"),
         "topic": config.get("topic", ""),
+        "heartbeat_interval_s": config.get("heartbeat_interval_s", ""),
+        "sensor_code": config.get("sensor_code", ""),
         "dynamic_topic_enabled": int(bool(config.get("dynamic_topic_enabled", False))),
         "mac_address": config.get("mac_address", ""),
         "resolved_topic": config.get("resolved_topic", ""),

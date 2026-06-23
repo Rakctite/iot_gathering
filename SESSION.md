@@ -113,3 +113,6 @@
 - Increased the Devices tab tag list page size from 12 to 21 rows.
 - Updated Runtime tab table sizing so sparse runtime tag pages keep the maximum panel height with empty space instead of stretching rows.
 - Updated Plugins tab layout to mirror the Devices tab: Output Plugin and Output Routes forms sit side by side, with Route List in a narrower right panel.
+- Added MQTT Output Route support for `system_heartbeat`: selecting `System Heartbeat` as the route device publishes `SYSTEM` status heartbeats to the resolved route topic plus `/status`.
+- Heartbeat routes reuse existing topic sender MAC resolution/refresh, publish telegraf-compatible status timestamps, and stay excluded from normal device/tag route matching.
+- Verified after heartbeat route changes: `.venv\Scripts\python.exe -m pytest -q` -> `121 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.

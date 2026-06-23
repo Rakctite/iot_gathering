@@ -296,6 +296,32 @@ def test_resolve_output_route_topic_stores_error_result(tmp_path):
     assert saved["config"]["resolved_error"] == "topic response timeout"
 
 
+def test_system_heartbeat_route_saves_without_real_device(tmp_path):
+    service = make_service(tmp_path)
+
+    route = service.save_output_route(
+        {
+            "device_id": "system_heartbeat",
+            "tag_group": "ignored",
+            "enabled": True,
+            "config": {
+                "route_kind": "system_heartbeat",
+                "dynamic_topic_enabled": True,
+                "mac_address": "AA:BB",
+                "heartbeat_interval_s": 1,
+                "sensor_code": "SYSTEM",
+            },
+        }
+    )
+
+    assert route["device_id"] is None
+    assert route["device_name"] == "System Heartbeat"
+    assert route["tag_group"] == ""
+    assert route["config"]["route_kind"] == "system_heartbeat"
+    assert route["config"]["heartbeat_interval_s"] == 1
+    assert route["config"]["sensor_code"] == "SYSTEM"
+
+
 def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
     service = make_service(tmp_path)
     device = service.create_device(

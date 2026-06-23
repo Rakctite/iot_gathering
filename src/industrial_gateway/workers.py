@@ -40,6 +40,9 @@ class OutputRoute:
     sink_type: str
     mqtt_config: MqttConfig
     topic: str = ""
+    route_kind: str = "data"
+    heartbeat_interval_s: float = 1.0
+    sensor_code: str = "SYSTEM"
 
 
 class DriverPoller(threading.Thread):
@@ -321,6 +324,7 @@ class SinkPublisher(threading.Thread):
         self.status_publish_interval_s = status_publish_interval_s
         self._latest: dict[tuple[str, str], dict[str, Any]] = {}
         self._device_statuses: dict[tuple[str, str], dict[str, Any]] = {}
+        self._heartbeat_published_at: dict[int, datetime] = {}
         self._stop_event = threading.Event()
 
     def stop(self) -> None:
@@ -348,6 +352,7 @@ class SinkPublisher(threading.Thread):
     def publish_cached(self, timestamp: datetime | None = None) -> int:
         now = timestamp or datetime.now(timezone.utc)
         self._refresh_stale_statuses(now)
+        self._publish_system_heartbeats(now)
         published = 0
         for snapshot in list(self._latest.values()):
             device = snapshot["device"]
@@ -372,6 +377,18 @@ class SinkPublisher(threading.Thread):
                 )
                 published += 1
         return published
+
+    def _publish_system_heartbeats(self, now: datetime) -> None:
+        for route in self.output_routes:
+            if route.route_kind != "system_heartbeat" or not route.topic:
+                continue
+            key = id(route)
+            last_published_at = self._heartbeat_published_at.get(key)
+            if last_published_at is not None and (now - last_published_at).total_seconds() < route.heartbeat_interval_s:
+                continue
+            self._heartbeat_published_at[key] = now
+            message = _system_heartbeat_status_message(route, now)
+            self._publish_message(self.sink, route.sink_type, message, _heartbeat_device(), 1)
 
     def _cache_result(self, result: ReadResult, received_at: datetime | None = None) -> None:
         received_at = received_at or datetime.now(timezone.utc)
@@ -617,17 +634,21 @@ class SinkPublisher(threading.Thread):
         exact = [
             route
             for route in self.output_routes
-            if route.device_id == device.id and route.tag_group == tag_group
+            if route.route_kind == "data" and route.device_id == device.id and route.tag_group == tag_group
         ]
         if exact:
             return exact[0]
         device_default = [
-            route for route in self.output_routes if route.device_id == device.id and route.tag_group == ""
+            route
+            for route in self.output_routes
+            if route.route_kind == "data" and route.device_id == device.id and route.tag_group == ""
         ]
         if device_default:
             return device_default[0]
         group_default = [
-            route for route in self.output_routes if route.device_id is None and route.tag_group == tag_group
+            route
+            for route in self.output_routes
+            if route.route_kind == "data" and route.device_id is None and route.tag_group == tag_group
         ]
         if group_default:
             return group_default[0]
@@ -679,10 +700,52 @@ def _ctm_status_message(
     )
 
 
+def _system_heartbeat_status_message(route: OutputRoute, timestamp: datetime) -> BatchMessage:
+    update_time = _telegraf_status_time(timestamp)
+    return BatchMessage(
+        topic=f"{route.topic.rstrip('/')}/status",
+        payload={
+            "timestamp": update_time,
+            "sensors": [
+                {
+                    "sensor_code": route.sensor_code or "SYSTEM",
+                    "conn_status": "on",
+                    "last_seen": update_time,
+                    "health_score": 100.0,
+                    "error_msg": None,
+                    "update_time": update_time,
+                }
+            ],
+        },
+        qos=route.mqtt_config.qos,
+        use_message_topic=True,
+    )
+
+
 def _iso_millis(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
     return value.isoformat(timespec="milliseconds")
+
+
+def _telegraf_status_time(value: datetime) -> str:
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=timezone.utc)
+    offset = value.strftime("%z")
+    if len(offset) >= 3:
+        offset = offset[:3]
+    return f"{value.strftime('%Y-%m-%d %H:%M:%S')}.{value.microsecond // 1000:03d}{offset}"
+
+
+def _heartbeat_device() -> DeviceSpec:
+    return DeviceSpec(
+        id=None,
+        name="System Heartbeat",
+        driver_type="system",
+        enabled=True,
+        poll_interval_ms=0,
+        connection={},
+    )
 
 
 def _tag_key(tag: TagResult) -> str:

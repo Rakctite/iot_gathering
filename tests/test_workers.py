@@ -291,6 +291,47 @@ def test_sink_publisher_uses_output_route_for_device_and_tag_group():
     assert default_sink.messages[0].payload["tags"][0]["tag_group"] == "temp"
 
 
+def test_sink_publisher_publishes_system_heartbeat_route():
+    inbox = Queue()
+    sink = FakeSink()
+    route = OutputRoute(
+        device_id=None,
+        tag_group="",
+        sink_type="mqtt",
+        mqtt_config=MqttConfig(base_topic="plant", qos=1),
+        topic="C-S/3120/PH/CTM/LO001/PH01/-/SYSTEM",
+        route_kind="system_heartbeat",
+        heartbeat_interval_s=1,
+        sensor_code="SYSTEM",
+    )
+    publisher = SinkPublisher(
+        sink,
+        MqttConfig(base_topic="plant"),
+        inbox,
+        output_routes=[route],
+    )
+
+    publisher.publish_cached(datetime(2026, 6, 23, 4, 30, 0, tzinfo=timezone.utc))
+
+    assert len(sink.messages) == 1
+    assert sink.messages[0].topic == "C-S/3120/PH/CTM/LO001/PH01/-/SYSTEM/status"
+    assert sink.messages[0].qos == 1
+    assert sink.messages[0].use_message_topic is True
+    assert sink.messages[0].payload == {
+        "timestamp": "2026-06-23 04:30:00.000+00",
+        "sensors": [
+            {
+                "sensor_code": "SYSTEM",
+                "conn_status": "on",
+                "last_seen": "2026-06-23 04:30:00.000+00",
+                "health_score": 100.0,
+                "error_msg": None,
+                "update_time": "2026-06-23 04:30:00.000+00",
+            }
+        ],
+    }
+
+
 def test_sink_publisher_emits_tag_update_status():
     inbox = Queue()
     status = Queue()
