@@ -1,3 +1,6 @@
+import csv
+import io
+
 import pytest
 
 from industrial_gateway.services.config_service import ConfigService
@@ -191,6 +194,8 @@ def test_plugin_csv_import_and_export_round_trip(tmp_path):
     )
 
     csv_text = service.export_plugins_csv()
+    exported_rows = list(csv.DictReader(io.StringIO(csv_text)))
+    exported_route = next(row for row in exported_rows if row["record_type"] == "route")
     imported = make_service(tmp_path / "plugins")
     imported.create_device(
         {
@@ -211,6 +216,9 @@ def test_plugin_csv_import_and_export_round_trip(tmp_path):
     assert "record_type" in csv_text
     assert "route" in csv_text
     assert "plant/opc/PHH01/data" in csv_text
+    assert exported_route["request_topic_by_mac"] == "1"
+    assert exported_route["dynamic_topic_enabled"] == "1"
+    assert exported_route["mac_address"] == "AA:BB"
     assert mqtt["enabled"] is True
     assert mqtt["selected"] is False
     assert mqtt["config"]["host"] == "broker"
@@ -348,6 +356,7 @@ def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
     )
 
     csv_text = service.export_plugin_routes_csv()
+    exported_route = next(csv.DictReader(io.StringIO(csv_text)))
     imported = make_service(tmp_path / "routes")
     imported_device = imported.create_device(
         {
@@ -369,6 +378,38 @@ def test_plugin_route_csv_import_and_export_round_trip(tmp_path):
     assert routes[0]["config"]["topic"] == "plant/opc/PHH01/data"
     assert routes[0]["config"]["dynamic_topic_enabled"] is True
     assert routes[0]["config"]["mac_address"] == "AA:BB"
+    assert exported_route["request_topic_by_mac"] == "1"
+    assert exported_route["dynamic_topic_enabled"] == "1"
+    assert exported_route["mac_address"] == "AA:BB"
+
+
+def test_plugin_route_csv_import_accepts_request_topic_by_mac_alias(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "device_group": "line",
+            "name": "opc",
+            "driver_type": "opcua",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        }
+    )
+    csv_text = "\n".join(
+        [
+            "device_group,device_name,tag_group,sink_type,enabled,topic,request_topic_by_mac,mac_address",
+            "line,opc,PHH01,mqtt,1,plant/opc/PHH01/data,1,AA:BB",
+            "",
+        ]
+    )
+
+    result = service.import_plugin_routes_csv(csv_text)
+
+    route = service.list_output_routes()[0]
+    assert result == {"routes": 1}
+    assert route["device_id"] == device["id"]
+    assert route["config"]["dynamic_topic_enabled"] is True
+    assert route["config"]["mac_address"] == "AA:BB"
 
 
 def test_device_csv_round_trips_mqtt_connection_fields(tmp_path):

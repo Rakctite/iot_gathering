@@ -97,6 +97,7 @@ _PLUGIN_CSV_FIELDS = [
     "qos",
     "topic_request_on_start",
     "topic_refresh_interval_s",
+    "request_topic_by_mac",
     "dynamic_topic_enabled",
     "mac_address",
     "resolved_topic",
@@ -122,6 +123,7 @@ _PLUGIN_ROUTE_CSV_FIELDS = [
     "topic",
     "heartbeat_interval_s",
     "sensor_code",
+    "request_topic_by_mac",
     "dynamic_topic_enabled",
     "mac_address",
     "resolved_topic",
@@ -630,7 +632,11 @@ def _route_config(payload: dict[str, Any]) -> dict[str, Any]:
     topic = str(config.get("topic") or payload.get("topic") or "").strip()
     if topic:
         values["topic"] = topic
-    if _csv_bool(config.get("dynamic_topic_enabled", payload.get("dynamic_topic_enabled")), False):
+    dynamic_topic_value = config.get(
+        "dynamic_topic_enabled",
+        config.get("request_topic_by_mac", payload.get("dynamic_topic_enabled", payload.get("request_topic_by_mac"))),
+    )
+    if _csv_bool(dynamic_topic_value, False):
         values["dynamic_topic_enabled"] = True
     mac_address = str(config.get("mac_address") or payload.get("mac_address") or "").strip()
     if mac_address:
@@ -851,6 +857,7 @@ def _plugin_route_csv_row(route: OutputRouteConfig, device: DeviceSpec | None) -
         "topic": config.get("topic", ""),
         "heartbeat_interval_s": config.get("heartbeat_interval_s", ""),
         "sensor_code": config.get("sensor_code", ""),
+        "request_topic_by_mac": int(bool(config.get("dynamic_topic_enabled", False))),
         "dynamic_topic_enabled": int(bool(config.get("dynamic_topic_enabled", False))),
         "mac_address": config.get("mac_address", ""),
         "resolved_topic": config.get("resolved_topic", ""),
