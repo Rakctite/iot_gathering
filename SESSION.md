@@ -19,8 +19,8 @@
 - If the change affects integrated deployment behavior, also update the root `C:\Users\mingyu.shin\docker\SESSION.md`.
 
 ## Docker Image
-- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
-- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.3`.
+- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd`.
+- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd`.
 - Planned next variants:
   - Keep the existing `1.0.3` tag as-is: default/core image without DB plugins.
   - From the next release onward, publish architecture-oriented tags instead of `db-amd64`: `amd` includes PostgreSQL DB plugin support, and `arm` excludes DB plugins for hardware driver plus MQTT use.
@@ -84,7 +84,7 @@
 - Verified focused tests: `.venv\Scripts\python.exe -m pytest tests\test_mqtt_sink.py tests\test_plugin_forms.py tests\test_config_service.py tests\test_web_api.py tests\test_runtime_manager.py -q` -> `31 passed, 8 warnings`.
 - Verified full test suite: `.venv\Scripts\python.exe -m pytest -q` -> `110 passed, 13 warnings`.
 - Verified frontend syntax: `node --check src\industrial_gateway\web\static\app.js`.
-- Added project version source `industrial_gateway.__version__`; current app/package version is `1.0.3`.
+- Added project version source `industrial_gateway.__version__`; current app/package version is `1.0.4`.
 - Added `/api/app-info` so the web UI can display the application version.
 - Added small version display next to the topbar `Industrial Gateway` title.
 - Added Docker image version metadata through `IOT_GATHERING_VERSION`, `INDUSTRIAL_GATEWAY_VERSION`, and `org.opencontainers.image.version` in both runtime Dockerfiles.
@@ -118,3 +118,8 @@
 - Verified after heartbeat route changes: `.venv\Scripts\python.exe -m pytest -q` -> `121 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
 - Updated mixed Modbus read publish behavior: if some tags fail and some succeed, successful tags still publish measurement data while the status payload includes both failed/off and successful/on tags.
 - Verified after mixed tag publish changes: `.venv\Scripts\python.exe -m pytest -q` -> `122 passed, 14 warnings`.
+- Updated app/package/Docker default image version to `1.0.4`.
+- Verified release tests before image build: `.venv\Scripts\python.exe -m pytest -q` -> `122 passed, 14 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
+- Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.4`.
+- AMD registry digest from buildx push output: `sha256:ed93e454ec62f0decf9008a3f9e8ac34b1045644308c91e660fe106ed4bc2072`.
+- `1.0.4-arm` build was intentionally skipped after the ARM emulated build was interrupted; no ARM `1.0.4` image was published in this session.
