@@ -123,3 +123,6 @@
 - Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.4`.
 - AMD registry digest from buildx push output: `sha256:ed93e454ec62f0decf9008a3f9e8ac34b1045644308c91e660fe106ed4bc2072`.
 - `1.0.4-arm` build was intentionally skipped after the ARM emulated build was interrupted; no ARM `1.0.4` image was published in this session.
+- Fixed plugin route CSV export/import so `request_topic_by_mac` is exported as an alias for `dynamic_topic_enabled`, and CSV import accepts either field while preserving `mac_address`.
+- Rebuilt and pushed `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd` with the CSV export fix.
+- Updated AMD registry digest from buildx push output: `sha256:0637137331b222d99ccb91de693eb8cd7c384e27023d5a426f62fad6052c1dff`.
