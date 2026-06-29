@@ -1,6 +1,6 @@
 services:
   iot_gathering:
-    image: ${REGISTRY:-203.228.107.184:5000}/btx/iot_gathering:${IOT_GATHERING_IMAGE_TAG:-1.0.4-amd}
+    image: ${REGISTRY:-203.228.107.184:5000}/btx/iot_gathering:${IOT_GATHERING_IMAGE_TAG:-1.0.5-amd}
     container_name: iot_gathering
     restart: unless-stopped
     environment:

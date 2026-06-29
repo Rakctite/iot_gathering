@@ -1,6 +1,6 @@
 [project]
 name = "industrial-gateway"
-version = "1.0.4"
+version = "1.0.5"
 description = "Web-based Modbus and OPC UA to MQTT/database industrial gateway"
 requires-python = ">=3.11"
 dependencies = [

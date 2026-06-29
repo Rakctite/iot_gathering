@@ -310,16 +310,7 @@ async function loadTags() {
 }
 
 async function loadAllDeviceTags() {
-  const groups = await Promise.all(state.devices.map(async device => {
-    const tags = await api(`/api/devices/${device.id}/tags`);
-    return tags.map(tag => ({
-      ...tag,
-      device_group: device.device_group || "",
-      device_name: device.name,
-      source_device_id: device.id
-    }));
-  }));
-  return groups.flat();
+  return api("/api/tags");
 }
 
 function renderTags() {

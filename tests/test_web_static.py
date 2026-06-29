@@ -63,6 +63,8 @@ def test_runtime_tab_has_pagination_controls():
     assert "toggleTagViewMode" in script
     assert "tagViewMode === \"all\"" in script
     assert "loadAllDeviceTags" in script
+    assert 'api("/api/tags")' in script
+    assert "Promise.all(state.devices.map" not in script
     assert "renderTagTableHeader" in script
     assert "device_name" in script
     assert "deviceEndpoint" in script

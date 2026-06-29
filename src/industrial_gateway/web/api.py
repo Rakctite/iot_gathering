@@ -137,6 +137,10 @@ def create_app(
     def list_tags(device_id: int, _user: dict[str, str] = Depends(session_dependency)):
         return config_service.list_tags(device_id)
 
+    @app.get("/api/tags")
+    def list_all_tags(_user: dict[str, str] = Depends(session_dependency)):
+        return config_service.list_all_tags()
+
     @app.get("/api/devices/{device_id}/tags.csv")
     def export_tags_csv(device_id: int, _user: dict[str, str] = Depends(session_dependency)):
         return Response(

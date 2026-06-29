@@ -164,6 +164,17 @@ class ConfigService:
         self.get_device(device_id)
         return [_tag_to_dict(tag) for tag in self.store.list_tags(device_id)]
 
+    def list_all_tags(self) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
+        for device in self.store.list_devices():
+            for tag in self.store.list_tags(device.id or 0):
+                row = _tag_to_dict(tag)
+                row["device_group"] = device.device_group or ""
+                row["device_name"] = device.name
+                row["source_device_id"] = device.id
+                rows.append(row)
+        return rows
+
     def get_tag(self, tag_id: int) -> dict[str, Any]:
         for device in self.store.list_devices():
             for tag in self.store.list_tags(device.id or 0):

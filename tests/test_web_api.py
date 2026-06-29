@@ -84,6 +84,50 @@ def test_device_tag_plugin_api_round_trip(tmp_path):
     }
 
 
+def test_all_tags_api_returns_tags_with_device_metadata(tmp_path):
+    client = make_client(tmp_path)
+    first = client.post(
+        "/api/devices",
+        json={
+            "device_group": "line-a",
+            "name": "plc-1",
+            "driver_type": "modbus_tcp",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"host": "127.0.0.1", "port": 502},
+        },
+    ).json()
+    second = client.post(
+        "/api/devices",
+        json={
+            "device_group": "line-b",
+            "name": "plc-2",
+            "driver_type": "modbus_tcp",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"host": "127.0.0.2", "port": 502},
+        },
+    ).json()
+    client.post(
+        f"/api/devices/{first['id']}/tags",
+        json={"name": "temperature", "address": 100, "function": "holding_register", "data_type": "float32"},
+    )
+    client.post(
+        f"/api/devices/{second['id']}/tags",
+        json={"name": "pressure", "address": 101, "function": "holding_register", "data_type": "float32"},
+    )
+
+    response = client.get("/api/tags")
+
+    assert response.status_code == 200
+    rows = response.json()
+    assert [(row["device_name"], row["source_device_id"], row["name"]) for row in rows] == [
+        ("plc-1", first["id"], "temperature"),
+        ("plc-2", second["id"], "pressure"),
+    ]
+    assert rows[0]["device_group"] == "line-a"
+
+
 def test_schema_api_exposes_driver_and_plugin_fields(tmp_path):
     client = make_client(tmp_path)
 
@@ -104,7 +148,7 @@ def test_app_info_api_exposes_version(tmp_path):
     response = client.get("/api/app-info")
 
     assert response.status_code == 200
-    assert response.json() == {"name": "Industrial Gateway", "version": "1.0.4"}
+    assert response.json() == {"name": "Industrial Gateway", "version": "1.0.5"}
 
 
 def test_runtime_status_endpoint_is_protected(tmp_path):

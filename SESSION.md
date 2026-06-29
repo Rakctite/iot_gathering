@@ -19,8 +19,8 @@
 - If the change affects integrated deployment behavior, also update the root `C:\Users\mingyu.shin\docker\SESSION.md`.
 
 ## Docker Image
-- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd`.
-- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd`.
+- Last recorded integrated image: `203.228.107.184:5000/btx/iot_gathering:1.0.5-amd`.
+- Project deployment doc default image tag: `203.228.107.184:5000/btx/iot_gathering:1.0.5-amd`.
 - Planned next variants:
   - Keep the existing `1.0.3` tag as-is: default/core image without DB plugins.
   - From the next release onward, publish architecture-oriented tags instead of `db-amd64`: `amd` includes PostgreSQL DB plugin support, and `arm` excludes DB plugins for hardware driver plus MQTT use.
@@ -126,3 +126,9 @@
 - Fixed plugin route CSV export/import so `request_topic_by_mac` is exported as an alias for `dynamic_topic_enabled`, and CSV import accepts either field while preserving `mac_address`.
 - Rebuilt and pushed `203.228.107.184:5000/btx/iot_gathering:1.0.4-amd` with the CSV export fix.
 - Updated AMD registry digest from buildx push output: `sha256:0637137331b222d99ccb91de693eb8cd7c384e27023d5a426f62fad6052c1dff`.
+- Investigated `Errno 24 Too many open files` on iot_gathering: runtime UI usage from a browser caused repeated per-device tag API calls, filling the process FD limit with sockets.
+- Added bulk `/api/tags` endpoint and changed the web UI `View all` tag loader to use one request instead of parallel `/api/devices/{id}/tags` calls.
+- Updated app/package/Docker default image version to `1.0.5` for the bulk tag API release.
+- Verified release tests before image build: `.venv\Scripts\python.exe -m pytest -q` -> `124 passed, 15 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
+- Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.5-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.5`.
+- AMD registry digest from buildx push output: `sha256:4b982772caf357dd62e61e68bfdf78d2a83b5500eb92e7a992a4db75b16c584f`.
