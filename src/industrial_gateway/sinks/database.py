@@ -38,8 +38,8 @@ class PostgresSink:
         return _safe_table_name(self.config.get("table", "gateway_tag_values"))
 
     def _execute(self, sql: str, params: tuple[Any, ...] | None = None) -> None:
-        cursor = self.connection.cursor()
-        cursor.execute(sql, params) if params is not None else cursor.execute(sql)
+        with self.connection.cursor() as cursor:
+            cursor.execute(sql, params) if params is not None else cursor.execute(sql)
 
 
 def _connect_postgres(config: dict[str, Any]) -> Any:

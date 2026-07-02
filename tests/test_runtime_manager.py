@@ -17,6 +17,9 @@ class FakeWorker:
     def stop(self):
         type(self).stopped += 1
 
+    def join(self, timeout=None):
+        self.join_timeout = timeout
+
 
 class FakeSink:
     def __init__(self, config):
@@ -45,6 +48,9 @@ class FakeTopicResponder:
 
     def stop(self):
         type(self).stopped += 1
+
+    def join(self, timeout=None):
+        self.join_timeout = timeout
 
 
 class FakePublisher(FakeWorker):
@@ -101,6 +107,28 @@ def test_start_stop_are_idempotent(tmp_path):
     assert manager.snapshot()["running"] is False
     assert manager.snapshot()["runtime_log_enabled"] is False
 
+    manager.shutdown()
+
+
+def test_stop_joins_workers_and_publisher(tmp_path):
+    FakePublisher.instances = []
+    manager = RuntimeManager(
+        make_store(tmp_path),
+        driver_registry={"modbus_tcp": lambda device, tags: object()},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakeWorker,
+        subscription_worker_class=FakeWorker,
+        publisher_class=FakePublisher,
+    )
+
+    manager.start()
+    poller = manager.pollers[0]
+    publisher = manager.publisher
+
+    manager.stop()
+
+    assert poller.join_timeout == 2
+    assert publisher.join_timeout == 2
     manager.shutdown()
 
 

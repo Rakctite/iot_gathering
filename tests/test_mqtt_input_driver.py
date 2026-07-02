@@ -11,12 +11,20 @@ class FakeMqttClient:
         self.on_message = None
         self.subscriptions = []
         self.unsubscriptions = []
+        self.loop_stops = 0
+        self.disconnects = 0
 
     def subscribe(self, topic_filter, qos=0):
         self.subscriptions.append((topic_filter, qos))
 
     def unsubscribe(self, topic_filter):
         self.unsubscriptions.append(topic_filter)
+
+    def loop_stop(self):
+        self.loop_stops += 1
+
+    def disconnect(self):
+        self.disconnects += 1
 
 
 def test_mqtt_input_driver_subscribes_and_maps_json_payload_to_tags():
@@ -159,3 +167,25 @@ def test_mqtt_input_driver_raises_when_client_disconnects_during_subscription():
 
     with pytest.raises(RuntimeError, match="disconnected"):
         driver.run_subscription_once(0)
+
+
+def test_mqtt_input_driver_disconnect_cleans_up_after_unexpected_disconnect():
+    device = DeviceSpec(
+        id=1,
+        name="curiot",
+        driver_type="mqtt",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"topic_filter": "curiot/+/data"},
+    )
+    driver = MqttInputDriver(device, [])
+    client = FakeMqttClient()
+    driver.client = client
+    driver._connected = True
+
+    driver._on_disconnect(None, None, 7)
+    driver.disconnect()
+
+    assert client.loop_stops == 1
+    assert client.disconnects == 1
+    assert driver.client is None

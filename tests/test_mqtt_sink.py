@@ -1,4 +1,8 @@
 import json
+import sys
+import types
+
+import pytest
 
 from industrial_gateway.models import BatchMessage
 from industrial_gateway.sinks.mqtt import MqttSink
@@ -15,6 +19,21 @@ class FakeClient:
     def publish(self, topic, payload, qos=0, retain=False):
         self.published.append((topic, payload, qos, retain))
         return FakePublishResult()
+
+
+class ConnectFailingClient:
+    def __init__(self):
+        self.loop_stops = 0
+        self.disconnects = 0
+
+    def connect(self, host, port):
+        raise OSError("broker down")
+
+    def loop_stop(self):
+        self.loop_stops += 1
+
+    def disconnect(self):
+        self.disconnects += 1
 
 
 def test_mqtt_sink_publishes_flat_tag_payload():
@@ -106,3 +125,30 @@ def test_mqtt_sink_publishes_status_payload_to_message_topic():
     assert topic == "industrial/status/NeatherD"
     assert json.loads(payload)["status"] == "stale"
     assert qos == 1
+
+
+def test_mqtt_sink_start_cleans_up_client_when_connect_fails(monkeypatch):
+    created = []
+
+    class FakeMqttModule:
+        @staticmethod
+        def Client(client_id=None):
+            client = ConnectFailingClient()
+            created.append(client)
+            return client
+
+    paho_module = types.ModuleType("paho")
+    mqtt_package = types.ModuleType("paho.mqtt")
+    mqtt_package.client = FakeMqttModule
+    paho_module.mqtt = mqtt_package
+    monkeypatch.setitem(sys.modules, "paho", paho_module)
+    monkeypatch.setitem(sys.modules, "paho.mqtt", mqtt_package)
+    monkeypatch.setitem(sys.modules, "paho.mqtt.client", FakeMqttModule)
+    sink = MqttSink({"host": "broker", "port": 1883})
+
+    with pytest.raises(OSError, match="broker down"):
+        sink.start()
+
+    assert created[0].loop_stops == 1
+    assert created[0].disconnects == 1
+    assert sink.client is None

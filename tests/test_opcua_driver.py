@@ -36,6 +36,11 @@ class FakeOpcUaClient:
         return self.subscription
 
 
+class DisconnectFailingOpcUaClient(FakeOpcUaClient):
+    async def disconnect(self):
+        raise RuntimeError("session already gone")
+
+
 class FakeSubscription:
     def __init__(self, publishing_interval_ms, handler):
         self.publishing_interval_ms = publishing_interval_ms
@@ -108,3 +113,25 @@ def test_opcua_subscription_handler_emits_changed_tag_result():
     assert emitted[0].tags[0].name == "speed"
     assert emitted[0].tags[0].value == 456.7
     assert driver.client.subscription.deleted is True
+
+
+def test_opcua_disconnect_closes_loop_even_when_client_disconnect_fails():
+    device = DeviceSpec(
+        id=1,
+        name="opc-server",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"endpoint": "opc.tcp://127.0.0.1:4840/freeopcua/server/"},
+    )
+    driver = OpcUaDriver(device, [])
+    driver.client = DisconnectFailingOpcUaClient()
+
+    driver.connect()
+    loop = driver._loop
+
+    driver.disconnect()
+
+    assert loop.is_closed() is True
+    assert driver._loop is None
+    assert driver._subscription is None

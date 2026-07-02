@@ -30,10 +30,18 @@ class OpcUaDriver:
         self._run(self.client.connect())
 
     def disconnect(self) -> None:
-        if self.client is not None and self._loop is not None:
-            self._run(self.client.disconnect())
-        if self._loop is not None:
-            self._loop.close()
+        client = self.client
+        loop = self._loop
+        self._subscription = None
+        try:
+            if client is not None and loop is not None:
+                try:
+                    self._run(client.disconnect())
+                except Exception:
+                    pass
+        finally:
+            if loop is not None:
+                loop.close()
             self._loop = None
 
     def read_tags(self) -> list[TagResult]:

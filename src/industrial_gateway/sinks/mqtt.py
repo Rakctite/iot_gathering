@@ -22,14 +22,21 @@ class MqttSink:
         self.client = mqtt.Client(client_id=self.config.client_id)
         if self.config.username:
             self.client.username_pw_set(self.config.username, self.config.password)
-        self.client.connect(self.config.host, self.config.port)
-        self.client.loop_start()
+        try:
+            self.client.connect(self.config.host, self.config.port)
+            self.client.loop_start()
+        except Exception:
+            self.stop()
+            raise
 
     def stop(self) -> None:
         if self.client is not None:
-            self.client.loop_stop()
-            self.client.disconnect()
+            client = self.client
             self.client = None
+            try:
+                client.loop_stop()
+            finally:
+                client.disconnect()
 
     def publish_batch(self, message: BatchMessage) -> None:
         if self.client is None:
@@ -98,4 +105,3 @@ def _parse_timestamp(timestamp: Any) -> datetime | None:
         return datetime.fromisoformat(text)
     except ValueError:
         return None
-

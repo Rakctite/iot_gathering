@@ -43,10 +43,16 @@ class MqttInputDriver:
     def disconnect(self) -> None:
         if self.client is None:
             return
-        if self._connected:
-            self.client.loop_stop()
-            self.client.disconnect()
-        self._connected = False
+        client = self.client
+        self.client = None
+        self.emit = None
+        try:
+            client.loop_stop()
+        finally:
+            try:
+                client.disconnect()
+            finally:
+                self._connected = False
 
     def read_tags(self) -> list[TagResult]:
         timestamp = datetime.now(timezone.utc)

@@ -169,6 +169,14 @@ class RuntimeManager:
                 self.topic_refresh_thread = None
             if self.publisher is not None:
                 self.publisher.stop()
+            for poller in self.pollers:
+                _join_if_thread(poller)
+            for worker in self.subscription_workers:
+                _join_if_thread(worker)
+            if self.topic_responder is not None:
+                _join_if_thread(self.topic_responder)
+            if self.publisher is not None:
+                _join_if_thread(self.publisher)
             self.running = False
             return self.snapshot()
 
@@ -365,3 +373,9 @@ def _bool_config(config: dict[str, Any], key: str, default: bool) -> bool:
 def _topic_responder_enabled() -> bool:
     enabled = os.getenv("INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED", "").strip().lower()
     return enabled in {"1", "true", "yes", "on"} and "postgresql" in enabled_plugin_types()
+
+
+def _join_if_thread(worker: Any, timeout: float = 2) -> None:
+    join = getattr(worker, "join", None)
+    if callable(join):
+        join(timeout=timeout)
