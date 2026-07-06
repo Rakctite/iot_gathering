@@ -113,6 +113,37 @@ class EventuallyConnectedSubscriptionDriver(FailingSubscriptionDriver):
         time.sleep(0.01)
 
 
+def test_subscription_worker_can_skip_datachange_log_payloads():
+    outbox = Queue()
+    logs = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="opc",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"mode": "subscription"},
+    )
+    worker = OpcUaSubscriptionWorker(
+        FailingSubscriptionDriver,
+        device,
+        [],
+        outbox,
+        log_queue=logs,
+        datachange_log_enabled=False,
+    )
+    result = ReadResult(
+        device=device,
+        timestamp=datetime(2026, 5, 16, tzinfo=timezone.utc),
+        tags=[TagResult("pv", 0, 1, "good", None, datetime(2026, 5, 16, tzinfo=timezone.utc))],
+    )
+
+    worker._emit_result(result)
+
+    assert outbox.get_nowait() is result
+    assert logs.empty()
+
+
 def test_driver_poller_puts_read_result_on_queue():
     outbox = Queue()
     logs = Queue()

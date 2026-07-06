@@ -1,5 +1,8 @@
-from industrial_gateway.models import DeviceSpec, OutputRouteConfig, SinkConfig, TagSpec
-from industrial_gateway.services.runtime_manager import RuntimeManager
+from datetime import datetime, timezone
+from queue import Empty
+
+from industrial_gateway.models import DeviceSpec, OutputRouteConfig, ReadResult, SinkConfig, TagResult, TagSpec
+from industrial_gateway.services.runtime_manager import RuntimeManager, _LatestReadResultQueue, _LatestStatusQueue
 from industrial_gateway.store import ConfigStore
 
 
@@ -77,6 +80,85 @@ def make_store(tmp_path):
     )
     store.save_sink_config(SinkConfig(sink_type="mqtt", enabled=True, config={"host": "localhost", "port": 1883}))
     return store
+
+
+def make_subscription_store(tmp_path):
+    store = ConfigStore(tmp_path / "gateway.sqlite3")
+    store.initialize()
+    device_id = store.save_device(
+        DeviceSpec(
+            id=None,
+            name="opc",
+            driver_type="opcua",
+            enabled=True,
+            poll_interval_ms=1000,
+            connection={"endpoint": "opc.tcp://127.0.0.1:4840", "mode": "subscription"},
+        )
+    )
+    store.save_tag(
+        TagSpec(
+            device_id=device_id,
+            name="pv",
+            address=0,
+            function="opcua_node",
+            data_type="auto",
+            node_id="ns=2;s=pv",
+        )
+    )
+    store.save_sink_config(SinkConfig(sink_type="mqtt", enabled=True, config={"host": "localhost", "port": 1883}))
+    return store
+
+
+def test_start_disables_subscription_datachange_logs_when_runtime_log_is_off(tmp_path):
+    manager = RuntimeManager(
+        make_subscription_store(tmp_path),
+        driver_registry={"opcua": lambda device, tags: object()},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakeWorker,
+        subscription_worker_class=FakeWorker,
+        publisher_class=FakeWorker,
+    )
+
+    manager.start(runtime_log_enabled=False)
+
+    assert manager.subscription_workers[0].kwargs["datachange_log_enabled"] is False
+    manager.shutdown()
+
+
+def test_latest_read_result_queue_upserts_by_device_and_tag():
+    queue = _LatestReadResultQueue()
+    device = DeviceSpec(id=1, name="opc", driver_type="opcua", enabled=True, poll_interval_ms=1000, connection={})
+    timestamp = datetime(2026, 5, 16, tzinfo=timezone.utc)
+
+    queue.put(ReadResult(device, timestamp, [TagResult("pv", 0, 1, "good", None, timestamp, node_id="ns=2;s=pv")]))
+    queue.put(ReadResult(device, timestamp, [TagResult("pv", 0, 2, "good", None, timestamp, node_id="ns=2;s=pv")]))
+    queue.put(ReadResult(device, timestamp, [TagResult("sv", 0, 3, "good", None, timestamp, node_id="ns=2;s=sv")]))
+
+    results = [queue.get_nowait(), queue.get_nowait()]
+
+    assert [(result.tags[0].name, result.tags[0].value) for result in results] == [("pv", 2), ("sv", 3)]
+    try:
+        queue.get_nowait()
+    except Empty:
+        pass
+    else:
+        raise AssertionError("queue should contain only latest values per tag")
+
+
+def test_latest_status_queue_upserts_tag_and_server_status_events():
+    queue = _LatestStatusQueue()
+
+    queue.put({"type": "tag_update", "device": "opc", "node_id": "ns=2;s=pv", "tag": "pv", "value": 1})
+    queue.put({"type": "tag_update", "device": "opc", "node_id": "ns=2;s=pv", "tag": "pv", "value": 2})
+    queue.put({"type": "server_status", "device": "opc", "status": "OK"})
+    queue.put({"type": "server_status", "device": "opc", "status": "ERROR"})
+
+    events = [queue.get_nowait(), queue.get_nowait()]
+
+    assert events == [
+        {"type": "tag_update", "device": "opc", "node_id": "ns=2;s=pv", "tag": "pv", "value": 2},
+        {"type": "server_status", "device": "opc", "status": "ERROR"},
+    ]
 
 
 def test_start_stop_are_idempotent(tmp_path):

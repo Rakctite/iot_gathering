@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import threading
+from collections import OrderedDict
 from collections import deque
 from pathlib import Path
 from queue import Empty, Queue
@@ -11,7 +12,7 @@ from industrial_gateway.config_schema import enabled_plugin_types
 from industrial_gateway.defaults import driver_registry as default_driver_registry
 from industrial_gateway.defaults import sink_registry as default_sink_registry
 from industrial_gateway.logging_worker import AsyncLogWorker
-from industrial_gateway.models import MqttConfig
+from industrial_gateway.models import MqttConfig, ReadResult
 from industrial_gateway.services.config_service import ConfigService
 from industrial_gateway.services.topic_request_client import request_topic_by_mac
 from industrial_gateway.services.topic_responder import TopicResponder, TopicResponderConfig
@@ -42,8 +43,8 @@ class RuntimeManager:
         self.topic_responder_class = topic_responder_class
         self.topic_request_resolver = request_topic_by_mac if topic_request_resolver is None else topic_request_resolver
         self.config_service = ConfigService(store)
-        self.result_queue: Queue[Any] = Queue()
-        self.status_queue: Queue[Any] = Queue()
+        self.result_queue: Any = _LatestReadResultQueue()
+        self.status_queue: Any = _LatestStatusQueue()
         self.log_display_queue: Queue[str] = Queue()
         self.pollers: list[Any] = []
         self.subscription_workers: list[Any] = []
@@ -135,6 +136,7 @@ class RuntimeManager:
                         log_queue=self.logger.input_queue,
                         status_outbox=self.status_queue,
                         health_interval_s=self.health_interval_s,
+                        datachange_log_enabled=self.runtime_log_enabled,
                     )
                     worker.start()
                     self.subscription_workers.append(worker)
@@ -373,6 +375,82 @@ def _bool_config(config: dict[str, Any], key: str, default: bool) -> bool:
 def _topic_responder_enabled() -> bool:
     enabled = os.getenv("INDUSTRIAL_GATEWAY_TOPIC_RESPONDER_ENABLED", "").strip().lower()
     return enabled in {"1", "true", "yes", "on"} and "postgresql" in enabled_plugin_types()
+
+
+class _LatestReadResultQueue:
+    def __init__(self) -> None:
+        self._items: OrderedDict[tuple[Any, ...], ReadResult] = OrderedDict()
+        self._condition = threading.Condition()
+
+    def put(self, item: ReadResult) -> None:
+        with self._condition:
+            for key, result in self._split_items(item):
+                if key in self._items:
+                    del self._items[key]
+                self._items[key] = result
+            self._condition.notify()
+
+    def get(self, timeout: float | None = None) -> ReadResult:
+        with self._condition:
+            if not self._items and not self._condition.wait(timeout):
+                raise Empty
+            if not self._items:
+                raise Empty
+            _, item = self._items.popitem(last=False)
+            return item
+
+    def get_nowait(self) -> ReadResult:
+        return self.get(timeout=0)
+
+    def empty(self) -> bool:
+        with self._condition:
+            return not self._items
+
+    def _split_items(self, item: ReadResult) -> list[tuple[tuple[Any, ...], ReadResult]]:
+        device_key = (item.device.id, item.device.device_group, item.device.name)
+        if item.error or not item.tags:
+            return [((*device_key, "__result__"), item)]
+        return [
+            (
+                (*device_key, tag.tag_group, tag.node_id or tag.name),
+                ReadResult(item.device, item.timestamp, [tag], item.error),
+            )
+            for tag in item.tags
+        ]
+
+
+class _LatestStatusQueue:
+    def __init__(self) -> None:
+        self._items: OrderedDict[tuple[Any, ...], Any] = OrderedDict()
+        self._sequence = 0
+        self._condition = threading.Condition()
+
+    def put(self, item: Any) -> None:
+        with self._condition:
+            key = self._key(item)
+            if key in self._items:
+                del self._items[key]
+            self._items[key] = item
+            self._condition.notify()
+
+    def get_nowait(self) -> Any:
+        with self._condition:
+            if not self._items:
+                raise Empty
+            _, item = self._items.popitem(last=False)
+            return item
+
+    def empty(self) -> bool:
+        with self._condition:
+            return not self._items
+
+    def _key(self, item: Any) -> tuple[Any, ...]:
+        if isinstance(item, dict) and item.get("type") == "tag_update":
+            return ("tag_update", item.get("device"), item.get("node_id") or item.get("tag"))
+        if isinstance(item, dict) and item.get("type") == "server_status":
+            return ("server_status", item.get("device"))
+        self._sequence += 1
+        return ("event", self._sequence)
 
 
 def _join_if_thread(worker: Any, timeout: float = 2) -> None:

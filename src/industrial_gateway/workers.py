@@ -164,6 +164,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
         status_outbox: Queue[Any] | None = None,
         health_interval_s: float = 10.0,
         retry_interval_s: float = 10.0,
+        datachange_log_enabled: bool = True,
     ) -> None:
         super().__init__(daemon=True)
         self.driver_factory = driver_factory
@@ -174,6 +175,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
         self.status_outbox = status_outbox
         self.health_interval_s = health_interval_s
         self.retry_interval_s = retry_interval_s
+        self.datachange_log_enabled = datachange_log_enabled
         self._last_health_check = 0.0
         self._stop_event = threading.Event()
         self.driver: SubscriptionDriver | None = None
@@ -260,6 +262,8 @@ class OpcUaSubscriptionWorker(threading.Thread):
 
     def _emit_result(self, result: ReadResult) -> None:
         self.outbox.put(result)
+        if not self.datachange_log_enabled:
+            return
         self._log(
             "INFO",
             "driver",
