@@ -148,7 +148,7 @@ def test_app_info_api_exposes_version(tmp_path):
     response = client.get("/api/app-info")
 
     assert response.status_code == 200
-    assert response.json() == {"name": "Industrial Gateway", "version": "1.0.6"}
+    assert response.json() == {"name": "Industrial Gateway", "version": "1.0.7"}
 
 
 def test_runtime_status_endpoint_is_protected(tmp_path):
