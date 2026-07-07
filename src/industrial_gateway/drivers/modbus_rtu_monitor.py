@@ -59,7 +59,9 @@ def parse_rtu_frame(frame: bytes) -> dict[str, Any]:
         "length": len(frame),
         "crc": "ok",
     }
-    if function & 0x80 and len(frame) >= 5:
+    if function & 0x80:
+        if len(frame) != 5:
+            raise ValueError("Modbus exception response must be exactly 5 bytes")
         result["exception_code"] = frame[2]
         return result
     if function in READ_FUNCTIONS and len(frame) >= 5:
@@ -73,6 +75,8 @@ def parse_rtu_frame(frame: bytes) -> dict[str, Any]:
             return result
         byte_count = frame[2]
         data = frame[3:-2]
+        if len(frame) != byte_count + 5:
+            raise ValueError("Modbus read response length does not match byte count")
         result["byte_count"] = byte_count
         if len(data) == byte_count and function in {3, 4} and byte_count % 2 == 0:
             result["registers"] = [_u16(data[index], data[index + 1]) for index in range(0, len(data), 2)]
@@ -80,8 +84,13 @@ def parse_rtu_frame(frame: bytes) -> dict[str, Any]:
             result["data_hex"] = _hex(data)
         return result
     if function in {5, 6, 15, 16} and len(frame) >= 8:
+        if len(frame) != 8:
+            raise ValueError("Modbus write acknowledgement must be exactly 8 bytes")
         result["start_address"] = _u16(frame[2], frame[3])
         result["value"] = _u16(frame[4], frame[5])
+        return result
+    if function not in READ_FUNCTIONS:
+        raise ValueError(f"unsupported Modbus function {function}")
     return result
 
 

@@ -1,3 +1,5 @@
+import pytest
+
 from industrial_gateway.drivers.modbus_rtu_monitor import (
     ModbusRtuMonitorDriver,
     crc16_modbus,
@@ -25,6 +27,19 @@ def test_parse_rtu_read_holding_registers_response():
     assert result["registers"] == [123, 45]
     assert result["raw_hex"] == "01 03 04 00 7B 00 2D 4A 37"
     assert result["crc"] == "ok"
+
+
+def test_parse_rtu_rejects_long_exception_like_noise_frame():
+    frame = bytes.fromhex(
+        "06 EA 3A C9 02 03 41 1B 08 50 60 DC F9 02 03 09 4B 16 1A 06 FF "
+        "01 03 41 1B 08 50 60 DC CA 01 03 09 43 04 3B 07 F5 02 03 41 1B "
+        "08 50 60 DC F9 02 03 09 4B 76 9E 3A F4 01 03 41 1B 08 50 60 DC "
+        "CA 01 03 09 3B E4 68 32 FF 02 03 41 1B 08 50 60 DC F9 02 03 04 "
+        "53 16 22 81 FF 01 03 41 1B"
+    )
+
+    with pytest.raises(ValueError, match="exception response"):
+        parse_rtu_frame(frame)
 
 
 def test_format_probe_result_includes_raw_and_decoded_values():
