@@ -35,6 +35,15 @@ _COMMON_MODBUS_LIMITS = (
     ConnectionField("max_bits_per_read", "Max bits/read", "int", 2000, minimum=1, maximum=2000),
 )
 
+_SERIAL_FIELDS = (
+    ConnectionField("port", "Serial port", "text", "COM1"),
+    ConnectionField("baudrate", "Baudrate", "int", 9600, minimum=300, maximum=4000000),
+    ConnectionField("parity", "Parity", "choice", "N", choices=("N", "E", "O")),
+    ConnectionField("stopbits", "Stop bits", "int", 1, minimum=1, maximum=2),
+    ConnectionField("bytesize", "Byte size", "int", 8, minimum=5, maximum=8),
+    ConnectionField("timeout", "Timeout sec", "float", 2.0),
+)
+
 _CONNECTION_FIELDS: dict[str, tuple[ConnectionField, ...]] = {
     "modbus_tcp": (
         ConnectionField("host", "IP / Host", "text", "127.0.0.1"),
@@ -42,13 +51,12 @@ _CONNECTION_FIELDS: dict[str, tuple[ConnectionField, ...]] = {
         *_COMMON_MODBUS_LIMITS,
     ),
     "modbus_serial": (
-        ConnectionField("port", "Serial port", "text", "COM1"),
-        ConnectionField("baudrate", "Baudrate", "int", 9600, minimum=300, maximum=4000000),
-        ConnectionField("parity", "Parity", "choice", "N", choices=("N", "E", "O")),
-        ConnectionField("stopbits", "Stop bits", "int", 1, minimum=1, maximum=2),
-        ConnectionField("bytesize", "Byte size", "int", 8, minimum=5, maximum=8),
-        ConnectionField("timeout", "Timeout sec", "float", 2.0),
+        *_SERIAL_FIELDS,
         *_COMMON_MODBUS_LIMITS,
+    ),
+    "modbus_rtu_monitor": (
+        *_SERIAL_FIELDS,
+        ConnectionField("capture_wait_s", "Capture wait sec", "float", 5.0, minimum=1, maximum=60),
     ),
     "opcua": (
         ConnectionField("endpoint", "Endpoint", "text", "opc.tcp://127.0.0.1:4840/freeopcua/server/"),

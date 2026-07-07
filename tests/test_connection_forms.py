@@ -29,6 +29,21 @@ def test_modbus_serial_connection_form_uses_serial_fields():
     assert default_connection_for_driver("modbus_serial")["baudrate"] == 9600
 
 
+def test_modbus_rtu_monitor_connection_form_uses_serial_probe_fields():
+    fields = connection_fields_for_driver("modbus_rtu_monitor")
+
+    assert [field.key for field in fields] == [
+        "port",
+        "baudrate",
+        "parity",
+        "stopbits",
+        "bytesize",
+        "timeout",
+        "capture_wait_s",
+    ]
+    assert default_connection_for_driver("modbus_rtu_monitor")["capture_wait_s"] == 5
+
+
 def test_opcua_connection_form_uses_endpoint_and_mode_fields():
     fields = connection_fields_for_driver("opcua")
 

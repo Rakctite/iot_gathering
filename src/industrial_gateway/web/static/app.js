@@ -50,7 +50,11 @@ function escapeHtml(value) {
 }
 
 function isModbusDriver(driverType) {
-  return driverType === "modbus_tcp" || driverType === "modbus_serial";
+  return driverType === "modbus_tcp" || driverType === "modbus_serial" || isModbusRtuMonitorDriver(driverType);
+}
+
+function isModbusRtuMonitorDriver(driverType) {
+  return driverType === "modbus_rtu_monitor";
 }
 
 function dataTypeLabel(type) {
@@ -195,6 +199,7 @@ function renderDeviceForm(device) {
     `<option value="${escapeHtml(driver)}" ${driver === data.driver_type ? "selected" : ""}>${escapeHtml(driver)}</option>`
   ).join("");
   const fields = state.driverSchema[data.driver_type]?.connection_fields || [];
+  const monitorProbe = isModbusRtuMonitorDriver(data.driver_type);
   form.innerHTML = `
     <h2>Device</h2>
     <label>Group <input name="device_group" value="${escapeHtml(data.device_group || "")}"></label>
@@ -203,6 +208,8 @@ function renderDeviceForm(device) {
     <label class="checkbox-row"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}> Enabled</label>
     <label>Poll ms <input name="poll_interval_ms" type="number" min="100" value="${data.poll_interval_ms || 1000}"></label>
     <div id="connectionFields">${fields.map(field => renderField(field, data.connection, "connection_")).join("")}</div>
+    ${monitorProbe ? `<button id="probeModbusRtuMonitor" type="button">Read first frame</button>
+    <label>First frame result <textarea name="connection_probe_result" readonly rows="8">${escapeHtml(data.connection?.probe_result || "")}</textarea></label>` : ""}
     <button type="submit">Save device</button>
     ${data.id ? `<button id="deleteDevice" type="button">Delete device</button>` : ""}
   `;
@@ -211,10 +218,27 @@ function renderDeviceForm(device) {
     renderDeviceForm(next);
   };
   form.onsubmit = saveDevice;
+  if (monitorProbe) {
+    document.getElementById("probeModbusRtuMonitor").onclick = () => probeModbusRtuMonitor(form, fields);
+  }
   if (data.id) {
     document.getElementById("deleteDevice").onclick = deleteDevice;
   }
   renderTagForm();
+}
+
+async function probeModbusRtuMonitor(form, fields) {
+  const output = form.elements.connection_probe_result;
+  output.value = "waiting for first valid Modbus RTU frame...";
+  try {
+    const result = await api("/api/devices/modbus-rtu-monitor/probe", {
+      method: "POST",
+      body: JSON.stringify({ connection: readFields(form, fields, "connection_") })
+    });
+    output.value = result.message || "";
+  } catch (error) {
+    output.value = error.message || "Modbus RTU monitor probe failed";
+  }
 }
 
 async function deleteDevice() {

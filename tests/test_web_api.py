@@ -165,6 +165,15 @@ def test_runtime_status_endpoint_is_protected(tmp_path):
     assert response.status_code == 401
 
 
+def test_modbus_rtu_monitor_probe_endpoint_is_protected(tmp_path):
+    app = create_app(tmp_path / "gateway.sqlite3", session_secret="secret")
+    client = TestClient(app)
+
+    response = client.post("/api/devices/modbus-rtu-monitor/probe", json={"connection": {}})
+
+    assert response.status_code == 401
+
+
 def test_runtime_events_websocket_sends_snapshot(tmp_path):
     client = make_client(tmp_path)
 

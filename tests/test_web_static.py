@@ -133,3 +133,13 @@ def test_tag_form_exposes_modbus_count_and_readable_data_type_labels():
     assert "NodeId" in script
     assert "int16 (2 bytes, 1 word)" in script
     assert "float64 (8 bytes, 4 words)" in script
+
+
+def test_modbus_rtu_monitor_device_form_has_probe_controls():
+    script = (Path(__file__).parents[1] / "src" / "industrial_gateway" / "web" / "static" / "app.js").read_text()
+
+    assert "isModbusRtuMonitorDriver" in script
+    assert "Read first frame" in script
+    assert "First frame result" in script
+    assert "/api/devices/modbus-rtu-monitor/probe" in script
+    assert "probeModbusRtuMonitor" in script
