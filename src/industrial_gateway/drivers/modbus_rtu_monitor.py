@@ -94,19 +94,34 @@ def parse_rtu_frame(frame: bytes) -> dict[str, Any]:
     return result
 
 
-def timeout_probe_result(connection: dict[str, Any]) -> dict[str, Any]:
+def timeout_probe_result(
+    connection: dict[str, Any],
+    *,
+    bytes_seen: int = 0,
+    last_raw: bytes = b"",
+    last_error: str = "",
+) -> dict[str, Any]:
     wait_s = float(connection.get("capture_wait_s", 5))
     result = {
         "status": "timeout",
         "port": connection.get("port", "COM1"),
         "capture_wait_s": wait_s,
+        "bytes_seen": bytes_seen,
         "captured_at": datetime.now(timezone.utc).isoformat(),
     }
-    result["message"] = (
-        f"status: timeout\n"
-        f"message: no valid Modbus RTU frame captured within {wait_s:g} sec\n"
-        "hint: check baudrate/parity/RS485 A-B polarity/GND/common line activity"
-    )
+    lines = [
+        "status: timeout",
+        f"message: no valid Modbus RTU frame captured within {wait_s:g} sec",
+        f"bytes_seen: {bytes_seen}",
+    ]
+    if last_raw:
+        result["last_raw_hex"] = _hex(last_raw)
+        lines.append(f"last_raw_hex: {result['last_raw_hex']}")
+    if last_error:
+        result["last_error"] = last_error
+        lines.append(f"last_error: {last_error}")
+    lines.append("hint: check baudrate/parity/RS485 A-B polarity/GND/common line activity")
+    result["message"] = "\n".join(lines)
     return result
 
 
@@ -120,22 +135,30 @@ def probe_first_frame(
     deadline = monotonic() + wait_s
     serial_port = _open_serial(connection, serial_factory)
     buffer = bytearray()
+    last_error = ""
     try:
         while monotonic() <= deadline:
             chunk = serial_port.read(256)
             if not chunk:
                 if buffer:
-                    candidate = _first_valid_frame(bytes(buffer))
+                    candidate, error = _first_valid_frame(bytes(buffer))
+                    last_error = error or last_error
                     if candidate is not None:
                         return _with_probe_metadata(candidate, connection)
                 if wait_s <= 0:
                     break
                 continue
             buffer.extend(chunk)
-            candidate = _first_valid_frame(bytes(buffer))
+            candidate, error = _first_valid_frame(bytes(buffer))
+            last_error = error or last_error
             if candidate is not None:
                 return _with_probe_metadata(candidate, connection)
-        return timeout_probe_result(connection)
+        return timeout_probe_result(
+            connection,
+            bytes_seen=len(buffer),
+            last_raw=bytes(buffer[-80:]),
+            last_error=last_error,
+        )
     finally:
         serial_port.close()
 
@@ -207,14 +230,16 @@ def _open_serial(connection: dict[str, Any], serial_factory: Any | None) -> Any:
     )
 
 
-def _first_valid_frame(data: bytes) -> dict[str, Any] | None:
+def _first_valid_frame(data: bytes) -> tuple[dict[str, Any] | None, str]:
+    last_error = ""
     for start in range(len(data)):
         for end in range(start + 4, len(data) + 1):
             try:
-                return parse_rtu_frame(data[start:end])
-            except ValueError:
+                return parse_rtu_frame(data[start:end]), ""
+            except ValueError as exc:
+                last_error = str(exc)
                 continue
-    return None
+    return None, last_error
 
 
 def _with_probe_metadata(result: dict[str, Any], connection: dict[str, Any]) -> dict[str, Any]:

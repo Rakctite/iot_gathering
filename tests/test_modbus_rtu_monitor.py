@@ -75,6 +75,22 @@ def test_timeout_probe_result_contains_troubleshooting_hint():
     assert "baudrate/parity/RS485 A-B polarity/GND" in result["message"]
 
 
+def test_timeout_probe_result_includes_rejected_raw_diagnostics():
+    result = timeout_probe_result(
+        {"port": "COM3", "capture_wait_s": 5},
+        bytes_seen=4,
+        last_raw=b"\x01\x03\x02\x2A",
+        last_error="CRC mismatch",
+    )
+
+    assert result["bytes_seen"] == 4
+    assert result["last_raw_hex"] == "01 03 02 2A"
+    assert result["last_error"] == "CRC mismatch"
+    assert "bytes_seen: 4" in result["message"]
+    assert "last_raw_hex: 01 03 02 2A" in result["message"]
+    assert "last_error: CRC mismatch" in result["message"]
+
+
 def test_probe_first_frame_reads_without_writing():
     class FakeSerial:
         writes = []
