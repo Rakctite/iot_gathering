@@ -9,6 +9,7 @@ from industrial_gateway.drivers.modbus_rtu_monitor import (
     probe_responses,
     timeout_probe_result,
 )
+from industrial_gateway.models import DeviceSpec, TagSpec
 
 
 def test_crc16_modbus_matches_known_read_response():
@@ -165,9 +166,52 @@ def test_probe_responses_lists_valid_slaves_and_latest_values():
     assert FakeSerial.writes == []
 
 
-def test_monitor_driver_runtime_is_noop_until_continuous_collection_exists():
-    driver = ModbusRtuMonitorDriver(device=None, tags=[])
+def test_monitor_driver_runtime_matches_request_response_pairs_to_tags():
+    class FakeSerial:
+        def __init__(self, *args, **kwargs):
+            self.chunks = [
+                bytes.fromhex("01 03 10 03 00 01 70 CA"),
+                bytes.fromhex("01 03 02 2A BF E6 94"),
+                bytes.fromhex("02 03 10 03 00 01 70 F9"),
+                bytes.fromhex("02 03 02 2A F5 23 63"),
+            ]
+            self.closed = False
+
+        def read(self, size=1):
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def close(self):
+            self.closed = True
+
+    device = DeviceSpec(
+        id=1,
+        name="tap",
+        driver_type="modbus_rtu_monitor",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={
+            "port": "COM3",
+            "baudrate": 9600,
+            "parity": "E",
+            "stopbits": 1,
+            "bytesize": 8,
+            "capture_wait_s": 1,
+        },
+    )
+    tags = [
+        TagSpec(name="slave_1_speed", address=4099, function="holding_register", data_type="uint16", unit_id=1),
+        TagSpec(name="slave_2_speed", address=4099, function="holding_register", data_type="uint16", unit_id=2),
+    ]
+    ticks = iter([0, 0, 0, 0, 0, 2])
+    driver = ModbusRtuMonitorDriver(device, tags)
+    driver.serial_factory = FakeSerial
+    driver.monotonic = lambda: next(ticks)
 
     driver.connect()
+    results = driver.read_tags()
+    driver.disconnect()
 
-    assert driver.read_tags() == []
+    assert [(result.name, result.value, result.quality) for result in results] == [
+        ("slave_1_speed", 10943, "good"),
+        ("slave_2_speed", 10997, "good"),
+    ]

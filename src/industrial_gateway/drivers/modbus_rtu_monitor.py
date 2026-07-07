@@ -4,6 +4,9 @@ from datetime import datetime, timezone
 import time
 from typing import Any
 
+from industrial_gateway.drivers.modbus import _apply_scale, _decode_registers, _register_count
+from industrial_gateway.models import TagResult
+
 
 READ_FUNCTIONS = {
     1: "read_coils",
@@ -11,21 +14,39 @@ READ_FUNCTIONS = {
     3: "read_holding_registers",
     4: "read_input_registers",
 }
+TAG_FUNCTIONS_BY_CODE = {
+    1: "coil",
+    2: "discrete_input",
+    3: "holding_register",
+    4: "input_register",
+}
 
 
 class ModbusRtuMonitorDriver:
     def __init__(self, device: Any, tags: list[Any]) -> None:
         self.device = device
         self.tags = tags
+        self.serial_factory: Any | None = None
+        self.monotonic: Any | None = None
+        self.serial_port: Any | None = None
 
     def connect(self) -> None:
-        return None
+        self.serial_port = _open_serial(self.device.connection, self.serial_factory)
 
     def disconnect(self) -> None:
-        return None
+        if self.serial_port is not None:
+            self.serial_port.close()
+            self.serial_port = None
 
     def read_tags(self) -> list[Any]:
-        return []
+        if self.serial_port is None:
+            raise RuntimeError("Modbus RTU monitor is not connected")
+        pairs = _capture_request_response_pairs(
+            self.serial_port,
+            self.device.connection,
+            monotonic=self.monotonic,
+        )
+        return _tag_results_from_pairs(self.device, self.tags, pairs, datetime.now(timezone.utc))
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -176,6 +197,28 @@ def probe_responses(
         serial_port.close()
 
 
+def _capture_request_response_pairs(
+    serial_port: Any,
+    connection: dict[str, Any],
+    monotonic: Any | None = None,
+) -> list[dict[str, Any]]:
+    monotonic = monotonic or time.monotonic
+    wait_s = float(connection.get("capture_wait_s", 5))
+    deadline = monotonic() + wait_s
+    buffer = bytearray()
+    pending: dict[tuple[int, int], dict[str, Any]] = {}
+    pairs: list[dict[str, Any]] = []
+    while monotonic() <= deadline:
+        chunk = serial_port.read(256)
+        if chunk:
+            buffer.extend(chunk)
+        found = _drain_request_response_pairs(buffer, pending)
+        pairs.extend(found)
+        if not chunk and wait_s <= 0:
+            break
+    return pairs
+
+
 def format_probe_result(result: dict[str, Any]) -> str:
     lines = [
         f"status: {result.get('status', '')}",
@@ -307,6 +350,40 @@ def _drain_response_frames(buffer: bytearray) -> tuple[dict[int, dict[str, Any]]
     return responses, last_error
 
 
+def _drain_request_response_pairs(
+    buffer: bytearray,
+    pending: dict[tuple[int, int], dict[str, Any]],
+) -> list[dict[str, Any]]:
+    pairs: list[dict[str, Any]] = []
+    while buffer:
+        frame, start, end, _error = _first_valid_frame_span(bytes(buffer))
+        if frame is None or start is None or end is None:
+            if len(buffer) > 512:
+                del buffer[:-512]
+            return pairs
+        if _is_read_request(frame):
+            pending[(int(frame["slave_id"]), int(frame["function"]))] = frame
+        elif _is_read_response(frame):
+            key = (int(frame["slave_id"]), int(frame["function"]))
+            request = pending.pop(key, None)
+            if request is not None:
+                pairs.append({"request": request, "response": _with_response_value(frame)})
+        del buffer[:end]
+    return pairs
+
+
+def _first_valid_frame_span(data: bytes) -> tuple[dict[str, Any] | None, int | None, int | None, str]:
+    last_error = ""
+    for start in range(len(data)):
+        for end in range(start + 4, len(data) + 1):
+            try:
+                return parse_rtu_frame(data[start:end]), start, end, ""
+            except ValueError as exc:
+                last_error = str(exc)
+                continue
+    return None, None, None, last_error
+
+
 def _first_response_frame_span(data: bytes) -> tuple[dict[str, Any] | None, int | None, int | None, str]:
     last_error = ""
     for start in range(len(data)):
@@ -325,11 +402,62 @@ def _is_read_response(frame: dict[str, Any]) -> bool:
     return frame.get("function") in READ_FUNCTIONS and "byte_count" in frame
 
 
+def _is_read_request(frame: dict[str, Any]) -> bool:
+    return frame.get("function") in READ_FUNCTIONS and "start_address" in frame and "quantity" in frame
+
+
 def _with_response_value(frame: dict[str, Any]) -> dict[str, Any]:
     registers = frame.get("registers")
     if isinstance(registers, list) and len(registers) == 1:
         return {**frame, "value": registers[0]}
     return frame
+
+
+def _tag_results_from_pairs(device: Any, tags: list[Any], pairs: list[dict[str, Any]], timestamp: datetime) -> list[TagResult]:
+    latest_pairs: dict[tuple[int, str, int], dict[str, Any]] = {}
+    for pair in pairs:
+        request = pair["request"]
+        function_name = TAG_FUNCTIONS_BY_CODE.get(int(request["function"]))
+        if function_name is None:
+            continue
+        key = (int(request["slave_id"]), function_name, int(request["start_address"]))
+        latest_pairs[key] = pair
+
+    results: list[TagResult] = []
+    default_unit_id = int(device.connection.get("unit_id", 1))
+    for tag in tags:
+        unit_id = int(tag.unit_id or default_unit_id)
+        result = _tag_result_from_pairs(tag, unit_id, latest_pairs, timestamp)
+        if result is not None:
+            results.append(result)
+    return results
+
+
+def _tag_result_from_pairs(
+    tag: Any,
+    unit_id: int,
+    latest_pairs: dict[tuple[int, str, int], dict[str, Any]],
+    timestamp: datetime,
+) -> TagResult | None:
+    for (pair_unit_id, function_name, start_address), pair in latest_pairs.items():
+        if pair_unit_id != unit_id or function_name != tag.function:
+            continue
+        response = pair["response"]
+        registers = response.get("registers")
+        if not isinstance(registers, list):
+            continue
+        quantity = int(pair["request"].get("quantity", len(registers)))
+        if not start_address <= tag.address < start_address + quantity:
+            continue
+        offset = tag.address - start_address
+        try:
+            count = _register_count(tag)
+            value = _decode_registers(registers[offset : offset + count], tag)
+            value = _apply_scale(value, tag.scale)
+            return TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
+        except Exception as exc:
+            return TagResult(tag.name, tag.address, None, "bad", str(exc), timestamp, tag_group=tag.tag_group)
+    return None
 
 
 def _with_probe_metadata(result: dict[str, Any], connection: dict[str, Any]) -> dict[str, Any]:
