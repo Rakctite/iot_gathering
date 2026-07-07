@@ -141,7 +141,7 @@ def probe_first_frame(
             chunk = serial_port.read(256)
             if not chunk:
                 if buffer:
-                    candidate, error = _first_valid_frame(bytes(buffer))
+                    candidate, error = _first_response_frame(bytes(buffer))
                     last_error = error or last_error
                     if candidate is not None:
                         return _with_probe_metadata(candidate, connection)
@@ -149,7 +149,7 @@ def probe_first_frame(
                     break
                 continue
             buffer.extend(chunk)
-            candidate, error = _first_valid_frame(bytes(buffer))
+            candidate, error = _first_response_frame(bytes(buffer))
             last_error = error or last_error
             if candidate is not None:
                 return _with_probe_metadata(candidate, connection)
@@ -240,6 +240,31 @@ def _first_valid_frame(data: bytes) -> tuple[dict[str, Any] | None, str]:
                 last_error = str(exc)
                 continue
     return None, last_error
+
+
+def _first_response_frame(data: bytes) -> tuple[dict[str, Any] | None, str]:
+    last_error = ""
+    for start in range(len(data)):
+        for end in range(start + 4, len(data) + 1):
+            try:
+                frame = parse_rtu_frame(data[start:end])
+            except ValueError as exc:
+                last_error = str(exc)
+                continue
+            if _is_read_response(frame):
+                return _with_response_value(frame), ""
+    return None, last_error
+
+
+def _is_read_response(frame: dict[str, Any]) -> bool:
+    return frame.get("function") in READ_FUNCTIONS and "byte_count" in frame
+
+
+def _with_response_value(frame: dict[str, Any]) -> dict[str, Any]:
+    registers = frame.get("registers")
+    if isinstance(registers, list) and len(registers) == 1:
+        return {**frame, "value": registers[0]}
+    return frame
 
 
 def _with_probe_metadata(result: dict[str, Any], connection: dict[str, Any]) -> dict[str, Any]:

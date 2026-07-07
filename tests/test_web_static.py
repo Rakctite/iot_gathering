@@ -139,7 +139,7 @@ def test_modbus_rtu_monitor_device_form_has_probe_controls():
     script = (Path(__file__).parents[1] / "src" / "industrial_gateway" / "web" / "static" / "app.js").read_text()
 
     assert "isModbusRtuMonitorDriver" in script
-    assert "Read first frame" in script
-    assert "First frame result" in script
+    assert "Read first response" in script
+    assert "First response result" in script
     assert "/api/devices/modbus-rtu-monitor/probe" in script
     assert "probeModbusRtuMonitor" in script

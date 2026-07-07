@@ -91,12 +91,15 @@ def test_timeout_probe_result_includes_rejected_raw_diagnostics():
     assert "last_error: CRC mismatch" in result["message"]
 
 
-def test_probe_first_frame_reads_without_writing():
+def test_probe_first_frame_reads_first_response_without_writing():
     class FakeSerial:
         writes = []
 
         def __init__(self, *args, **kwargs):
-            self.chunks = [b"\x01\x03\x04\x00\x7B\x00\x2D\x4A\x37"]
+            self.chunks = [
+                bytes.fromhex("01 03 10 03 00 01 70 CA"),
+                bytes.fromhex("01 03 02 2A BF E6 94"),
+            ]
 
         def read(self, size=1):
             return self.chunks.pop(0) if self.chunks else b""
@@ -115,7 +118,9 @@ def test_probe_first_frame_reads_without_writing():
     )
 
     assert result["status"] == "ok"
-    assert result["registers"] == [123, 45]
+    assert result["function_name"] == "read_holding_registers_response"
+    assert result["registers"] == [10943]
+    assert result["value"] == 10943
     assert result["port"] == "COM3"
     assert FakeSerial.writes == []
 
