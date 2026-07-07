@@ -196,7 +196,7 @@ def _decode_register_block(registers: list[int], block: _ReadBlock, timestamp: d
         count = _register_count(tag)
         try:
             value = _decode_registers(registers[offset : offset + count], tag)
-            value = _apply_scale(value, tag.scale)
+            value = _apply_scale(value, tag.scale, tag.offset)
             results[tag.name] = TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             results[tag.name] = _bad(tag, timestamp, str(exc))
@@ -277,13 +277,13 @@ def _decode_single_register_value(registers: list[int], tag: TagSpec) -> int | f
     raise ValueError(f"unsupported data type {tag.data_type}")
 
 
-def _apply_scale(value: Any, scale: float) -> Any:
+def _apply_scale(value: Any, scale: float, offset: float = 0.0) -> Any:
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
-        return value * scale
+        return value * scale + offset
     if isinstance(value, list):
-        return [_apply_scale(item, scale) for item in value]
+        return [_apply_scale(item, scale, offset) for item in value]
     return value
 
 

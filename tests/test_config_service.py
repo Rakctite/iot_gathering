@@ -70,6 +70,38 @@ def test_tag_crud_round_trip(tmp_path):
     assert service.list_tags(device["id"]) == []
 
 
+def test_tag_crud_round_trips_offset(tmp_path):
+    service = make_service(tmp_path)
+    device = service.create_device(
+        {
+            "name": "plc-1",
+            "driver_type": "modbus_tcp",
+            "enabled": True,
+            "poll_interval_ms": 1000,
+            "connection": {"host": "127.0.0.1", "port": 502, "unit_id": 1},
+        }
+    )
+
+    tag = service.create_tag(
+        device["id"],
+        {
+            "name": "temperature",
+            "address": 100,
+            "function": "holding_register",
+            "data_type": "int16",
+            "scale": 0.1,
+            "offset": -40.0,
+            "enabled": True,
+        },
+    )
+
+    assert tag["offset"] == -40.0
+    assert service.list_tags(device["id"])[0]["offset"] == -40.0
+
+    updated = service.update_tag(tag["id"], {**tag, "offset": 12.5})
+    assert updated["offset"] == 12.5
+
+
 def test_tag_crud_accepts_count_alias_for_modbus_read_count(tmp_path):
     service = make_service(tmp_path)
     device = service.create_device(

@@ -40,6 +40,7 @@ class TagSpec:
     id: int | None = None
     device_id: int | None = None
     scale: float = 1.0
+    offset: float = 0.0
     enabled: bool = True
     unit_id: int | None = None
     word_count: int | None = None

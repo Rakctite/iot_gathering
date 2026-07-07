@@ -217,6 +217,60 @@ def test_monitor_driver_runtime_matches_request_response_pairs_to_tags():
     ]
 
 
+def test_monitor_driver_adds_offset_after_scaling_register_value():
+    class FakeSerial:
+        def __init__(self, *args, **kwargs):
+            self.chunks = [
+                bytes.fromhex("01 03 10 03 00 01 70 CA"),
+                bytes.fromhex("01 03 02 2A BF E6 94"),
+            ]
+
+        def read(self, size=1):
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def close(self):
+            pass
+
+    device = DeviceSpec(
+        id=1,
+        name="tap",
+        driver_type="modbus_rtu_monitor",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={
+            "port": "COM3",
+            "baudrate": 9600,
+            "parity": "E",
+            "stopbits": 1,
+            "bytesize": 8,
+            "capture_wait_s": 1,
+        },
+    )
+    tags = [
+        TagSpec(
+            name="slave_1_speed",
+            address=4099,
+            function="holding_register",
+            data_type="uint16",
+            unit_id=1,
+            scale=0.1,
+            offset=-40.0,
+        ),
+    ]
+    ticks = iter([0, 0, 0, 2])
+    driver = ModbusRtuMonitorDriver(device, tags)
+    driver.serial_factory = FakeSerial
+    driver.monotonic = lambda: next(ticks)
+
+    driver.connect()
+    results = driver.read_tags()
+    driver.disconnect()
+
+    assert [(result.name, result.value, result.quality) for result in results] == [
+        ("slave_1_speed", 1054.3, "good"),
+    ]
+
+
 def test_monitor_driver_returns_bad_result_for_unobserved_configured_tag():
     class FakeSerial:
         def __init__(self, *args, **kwargs):

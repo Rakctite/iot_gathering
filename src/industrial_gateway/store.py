@@ -35,6 +35,7 @@ class ConfigStore:
                     function TEXT NOT NULL,
                     data_type TEXT NOT NULL,
                     scale REAL NOT NULL,
+                    offset REAL NOT NULL DEFAULT 0,
                     enabled INTEGER NOT NULL,
                     unit_id INTEGER,
                     word_count INTEGER,
@@ -150,8 +151,8 @@ class ConfigStore:
                 cursor = conn.execute(
                     """
                     INSERT INTO tags
-                    (device_id, tag_group, name, address, function, data_type, scale, enabled, unit_id, word_count, byte_order, word_order, node_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (device_id, tag_group, name, address, function, data_type, scale, offset, enabled, unit_id, word_count, byte_order, word_order, node_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         tag.device_id,
@@ -161,6 +162,7 @@ class ConfigStore:
                         tag.function,
                         tag.data_type,
                         tag.scale,
+                        tag.offset,
                         int(tag.enabled),
                         tag.unit_id,
                         tag.word_count,
@@ -173,7 +175,7 @@ class ConfigStore:
             conn.execute(
                 """
                 UPDATE tags
-                SET device_id = ?, tag_group = ?, name = ?, address = ?, function = ?, data_type = ?, scale = ?, enabled = ?,
+                SET device_id = ?, tag_group = ?, name = ?, address = ?, function = ?, data_type = ?, scale = ?, offset = ?, enabled = ?,
                     unit_id = ?, word_count = ?, byte_order = ?, word_order = ?
                     , node_id = ?
                 WHERE id = ?
@@ -186,6 +188,7 @@ class ConfigStore:
                     tag.function,
                     tag.data_type,
                     tag.scale,
+                    tag.offset,
                     int(tag.enabled),
                     tag.unit_id,
                     tag.word_count,
@@ -201,7 +204,7 @@ class ConfigStore:
         with self._connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, device_id, name, address, function, data_type, scale, enabled,
+                SELECT id, device_id, name, address, function, data_type, scale, offset, enabled,
                        unit_id,
                        tag_group, word_count, byte_order, word_order
                        , node_id
@@ -221,6 +224,7 @@ class ConfigStore:
                 function=row["function"],
                 data_type=row["data_type"],
                 scale=row["scale"],
+                offset=row["offset"],
                 enabled=bool(row["enabled"]),
                 unit_id=row["unit_id"],
                 word_count=row["word_count"],
@@ -448,6 +452,8 @@ class ConfigStore:
             conn.execute("ALTER TABLE tags ADD COLUMN node_id TEXT")
         if "tag_group" not in columns:
             conn.execute("ALTER TABLE tags ADD COLUMN tag_group TEXT NOT NULL DEFAULT ''")
+        if "offset" not in columns:
+            conn.execute("ALTER TABLE tags ADD COLUMN offset REAL NOT NULL DEFAULT 0")
 
     def _migrate_sink_config(self, conn: sqlite3.Connection) -> None:
         columns = [row["name"] for row in conn.execute("PRAGMA table_info(sink_config)").fetchall()]

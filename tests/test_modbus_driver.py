@@ -151,6 +151,32 @@ def test_modbus_driver_passes_unit_id_as_device_id_for_input_registers():
     assert results[0].value == 12.3
 
 
+def test_modbus_driver_adds_offset_after_scaling_register_value():
+    device = DeviceSpec(
+        id=1,
+        name="pressure",
+        driver_type="modbus_serial",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"unit_id": 7},
+    )
+    tag = TagSpec(
+        name="press1",
+        address=0,
+        function="input_register",
+        data_type="int16",
+        scale=0.1,
+        offset=-40.0,
+    )
+    driver = ModbusTcpDriver(device, [tag])
+    driver.client = InputRegisterModbusClient()
+
+    results = driver.read_tags()
+
+    assert results[0].quality == "good"
+    assert results[0].value == -27.7
+
+
 def test_modbus_driver_uses_tag_unit_id_as_device_id_when_present():
     device = DeviceSpec(
         id=1,

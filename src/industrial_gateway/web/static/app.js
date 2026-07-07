@@ -279,7 +279,7 @@ function renderTagForm() {
   const driverType = state.selectedDevice?.driver_type || "modbus_tcp";
   const schema = state.driverSchema[driverType] || { tag_functions: [], tag_types: [] };
   const modbus = isModbusDriver(driverType);
-  const data = state.selectedTag || { tag_group: "", name: "", node_id: "", address: 0, unit_id: "", count: "", word_count: "", function: schema.tag_functions[0] || "", data_type: schema.tag_types[0] || "", scale: 1, enabled: true };
+  const data = state.selectedTag || { tag_group: "", name: "", node_id: "", address: 0, unit_id: "", count: "", word_count: "", function: schema.tag_functions[0] || "", data_type: schema.tag_types[0] || "", scale: 1, offset: 0, enabled: true };
   const functionOptions = schema.tag_functions.map(item => `<option value="${escapeHtml(item)}" ${item === data.function ? "selected" : ""}>${escapeHtml(item)}</option>`).join("");
   const typeOptions = schema.tag_types.map(item => `<option value="${escapeHtml(item)}" ${item === data.data_type ? "selected" : ""}>${escapeHtml(dataTypeLabel(item))}</option>`).join("");
   const countValue = data.count ?? data.word_count ?? "";
@@ -294,6 +294,7 @@ function renderTagForm() {
     <label>Function <select name="function">${functionOptions}</select></label>
     <label>Data type <select name="data_type">${typeOptions}</select></label>
     <label>Scale <input name="scale" type="number" step="any" value="${data.scale || 1}"></label>
+    <label>Offset <input name="offset" type="number" step="any" value="${data.offset || 0}"></label>
     <label class="checkbox-row"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}> Enabled</label>
     <button type="submit">${data.id ? "Save tag" : "Add tag"}</button>
     <button id="newTag" type="button">New tag</button>
@@ -444,6 +445,7 @@ async function saveTag(event) {
     function: form.elements.function.value,
     data_type: form.elements.data_type.value,
     scale: Number(form.elements.scale.value),
+    offset: Number(form.elements.offset.value),
     enabled: form.elements.enabled.checked
   };
   if (form.elements.count && form.elements.count.value !== "") {

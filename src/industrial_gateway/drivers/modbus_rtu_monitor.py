@@ -462,7 +462,7 @@ def _tag_result_from_pairs(
         try:
             count = _register_count(tag)
             value = _decode_registers(registers[offset : offset + count], tag)
-            value = _apply_scale(value, tag.scale)
+            value = _apply_scale(value, tag.scale, tag.offset)
             return TagResult(tag.name, tag.address, value, "good", None, timestamp, tag_group=tag.tag_group)
         except Exception as exc:
             return TagResult(tag.name, tag.address, None, "bad", str(exc), timestamp, tag_group=tag.tag_group)

@@ -132,3 +132,10 @@
 - Verified release tests before image build: `.venv\Scripts\python.exe -m pytest -q` -> `124 passed, 15 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
 - Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.5-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.5`.
 - AMD registry digest from buildx push output: `sha256:4b982772caf357dd62e61e68bfdf78d2a83b5500eb92e7a992a4db75b16c584f`.
+- Added tag `offset` support: API/UI/CSV/SQLite store now preserve an offset value, and Modbus TCP/Serial plus RTU monitor apply `raw * scale + offset` for numeric tag values.
+- Updated app/package/Docker default image version to `1.0.8`.
+- Verified release tests before image build: `.venv\Scripts\python.exe -m pytest -q` -> `150 passed, 16 warnings`; `node --check src\industrial_gateway\web\static\app.js` passed.
+- Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.8-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.8`.
+- AMD registry digest from docker push output: `sha256:2127136143ce00ff3609b8bbae07c9a29f0d2e48aae61c4fe141c6c3a6e28def`.
+- Built and pushed ARM core image `203.228.107.184:5000/btx/iot_gathering:1.0.8-arm` from `Dockerfile` with `IOT_GATHERING_VERSION=1.0.8`; ARM image has no PostgreSQL plugin profile.
+- ARM registry digest from docker push output: `sha256:8f46333fc47de5c46c262949bd4d3f480f4283b2b597e16373fdf1ed41815c91`.
