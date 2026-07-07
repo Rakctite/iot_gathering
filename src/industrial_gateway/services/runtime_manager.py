@@ -239,11 +239,7 @@ class RuntimeManager:
         for device in self.store.list_devices():
             if not device.enabled:
                 continue
-            mode = (
-                "Subscription"
-                if _uses_subscription_worker(device)
-                else "Polling"
-            )
+            mode = _runtime_mode(device)
             for tag in self.store.list_tags(device.id or 0):
                 if not tag.enabled:
                     continue
@@ -337,6 +333,14 @@ def _uses_subscription_worker(device: Any) -> bool:
     return device.driver_type == "mqtt" or (
         device.driver_type == "opcua" and device.connection.get("mode") == "subscription"
     )
+
+
+def _runtime_mode(device: Any) -> str:
+    if device.driver_type == "modbus_rtu_monitor":
+        return "Monitoring"
+    if _uses_subscription_worker(device):
+        return "Subscription"
+    return "Polling"
 
 
 def _route_topic(base_topic: str, route_topic: Any) -> str:

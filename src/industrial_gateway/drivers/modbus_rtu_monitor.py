@@ -428,8 +428,17 @@ def _tag_results_from_pairs(device: Any, tags: list[Any], pairs: list[dict[str, 
     for tag in tags:
         unit_id = int(tag.unit_id or default_unit_id)
         result = _tag_result_from_pairs(tag, unit_id, latest_pairs, timestamp)
-        if result is not None:
-            results.append(result)
+        if result is None:
+            result = TagResult(
+                tag.name,
+                tag.address,
+                None,
+                "bad",
+                "tag was not observed in captured Modbus RTU traffic",
+                timestamp,
+                tag_group=tag.tag_group,
+            )
+        results.append(result)
     return results
 
 

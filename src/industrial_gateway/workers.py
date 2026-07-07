@@ -786,6 +786,8 @@ def _topic_with_group(topic: str, group: str) -> str:
 
 
 def _runtime_mode(device: DeviceSpec) -> str:
+    if device.driver_type == "modbus_rtu_monitor":
+        return "Monitoring"
     if device.driver_type == "mqtt" or (device.driver_type == "opcua" and device.connection.get("mode") == "subscription"):
         return "Subscription"
     return "Polling"

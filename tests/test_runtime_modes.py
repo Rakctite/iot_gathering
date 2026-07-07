@@ -129,3 +129,72 @@ def test_mqtt_device_uses_subscription_worker_in_runtime_manager(tmp_path):
     assert len(manager.subscription_workers) == 1
     assert manager.snapshot()["runtime_tags"][0]["mode"] == "Subscription"
     manager.shutdown()
+
+
+def test_modbus_rtu_monitor_device_mode_is_monitoring_in_runtime_manager(tmp_path):
+    from industrial_gateway.models import SinkConfig, TagSpec
+    from industrial_gateway.services.runtime_manager import RuntimeManager
+    from industrial_gateway.store import ConfigStore
+
+    class FakeSink:
+        def __init__(self, config):
+            self.config = config
+
+    class FakePublisher:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    class FakePoller:
+        def __init__(self, driver_factory, device, tags, outbox, **kwargs):
+            self.driver_factory = driver_factory
+            self.device = device
+            self.tags = tags
+
+        def start(self):
+            pass
+
+        def stop(self):
+            pass
+
+    store = ConfigStore(tmp_path / "gateway.sqlite3")
+    store.initialize()
+    store.save_device(
+        DeviceSpec(
+            id=None,
+            name="tap",
+            driver_type="modbus_rtu_monitor",
+            enabled=True,
+            poll_interval_ms=1000,
+            connection={"port": "COM3"},
+        )
+    )
+    device_id = store.list_devices()[0].id
+    store.save_tag(
+        TagSpec(
+            device_id=device_id,
+            name="speed",
+            address=4099,
+            function="holding_register",
+            data_type="uint16",
+            unit_id=1,
+        )
+    )
+    store.save_sink_config(SinkConfig(sink_type="mqtt", enabled=False, config={}))
+    manager = RuntimeManager(
+        store,
+        driver_registry={"modbus_rtu_monitor": FakePoller},
+        sink_registry={"mqtt": FakeSink},
+        poller_class=FakePoller,
+        publisher_class=FakePublisher,
+    )
+
+    snapshot = manager.start()
+
+    assert snapshot["runtime_tags"][0]["mode"] == "Monitoring"
+    manager.shutdown()

@@ -443,6 +443,34 @@ def test_sink_publisher_logs_bad_tag_result():
     assert record["data"]["error"] == "read timeout"
 
 
+def test_sink_publisher_marks_modbus_rtu_monitor_runtime_mode_as_monitoring():
+    sink = FakeSink()
+    inbox = Queue()
+    status = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="tap",
+        driver_type="modbus_rtu_monitor",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={},
+    )
+    inbox.put(
+        ReadResult(
+            device,
+            datetime(2026, 1, 1, tzinfo=timezone.utc),
+            [TagResult("speed", 4099, 10, "good", None, datetime(2026, 1, 1, tzinfo=timezone.utc))],
+        )
+    )
+    publisher = SinkPublisher(sink, MqttConfig(base_topic="plant"), inbox, status_outbox=status)
+
+    publisher.publish_once()
+
+    event = status.get_nowait()
+    assert event["type"] == "tag_update"
+    assert event["mode"] == "Monitoring"
+
+
 def test_sink_publisher_logs_plugin_type_on_sink_failure():
     class FailingStartSink(FakeSink):
         def start(self):
