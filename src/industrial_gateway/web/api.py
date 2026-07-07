@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from industrial_gateway import __version__
 from industrial_gateway.config_schema import driver_schema, plugin_schema
-from industrial_gateway.drivers.modbus_rtu_monitor import probe_first_frame
+from industrial_gateway.drivers.modbus_rtu_monitor import probe_responses
 from industrial_gateway.services.config_service import ConfigService
 from industrial_gateway.services.runtime_manager import RuntimeManager
 from industrial_gateway.store import ConfigStore
@@ -140,7 +140,7 @@ def create_app(
 
     @app.post("/api/devices/modbus-rtu-monitor/probe")
     def probe_modbus_rtu_monitor(payload: dict, _user: dict[str, str] = Depends(session_dependency)):
-        return probe_first_frame(payload.get("connection") or {})
+        return probe_responses(payload.get("connection") or {})
 
     @app.get("/api/tags")
     def list_all_tags(_user: dict[str, str] = Depends(session_dependency)):

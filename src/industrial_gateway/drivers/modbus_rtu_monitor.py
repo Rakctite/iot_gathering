@@ -130,29 +130,42 @@ def probe_first_frame(
     serial_factory: Any | None = None,
     monotonic: Any | None = None,
 ) -> dict[str, Any]:
+    result = probe_responses(connection, serial_factory=serial_factory, monotonic=monotonic)
+    responses = result.get("responses")
+    if result.get("status") == "ok" and isinstance(responses, list) and responses:
+        return {**responses[0], **_connection_metadata(connection), "message": format_probe_result({**responses[0], **_connection_metadata(connection)})}
+    return result
+
+
+def probe_responses(
+    connection: dict[str, Any],
+    serial_factory: Any | None = None,
+    monotonic: Any | None = None,
+) -> dict[str, Any]:
     monotonic = monotonic or time.monotonic
     wait_s = float(connection.get("capture_wait_s", 5))
     deadline = monotonic() + wait_s
     serial_port = _open_serial(connection, serial_factory)
     buffer = bytearray()
     last_error = ""
+    responses_by_slave: dict[int, dict[str, Any]] = {}
     try:
         while monotonic() <= deadline:
             chunk = serial_port.read(256)
             if not chunk:
                 if buffer:
-                    candidate, error = _first_response_frame(bytes(buffer))
+                    found, error = _drain_response_frames(buffer)
                     last_error = error or last_error
-                    if candidate is not None:
-                        return _with_probe_metadata(candidate, connection)
+                    responses_by_slave.update(found)
                 if wait_s <= 0:
                     break
                 continue
             buffer.extend(chunk)
-            candidate, error = _first_response_frame(bytes(buffer))
+            found, error = _drain_response_frames(buffer)
             last_error = error or last_error
-            if candidate is not None:
-                return _with_probe_metadata(candidate, connection)
+            responses_by_slave.update(found)
+        if responses_by_slave:
+            return _responses_probe_result(connection, responses_by_slave)
         return timeout_probe_result(
             connection,
             bytes_seen=len(buffer),
@@ -188,6 +201,29 @@ def format_probe_result(result: dict[str, Any]) -> str:
             lines.append(f"{key}: {result[key]}")
     if result.get("message") and result.get("status") != "ok":
         lines.append(f"message: {result['message']}")
+    return "\n".join(lines)
+
+
+def format_responses_probe_result(result: dict[str, Any]) -> str:
+    lines = [
+        f"status: {result.get('status', '')}",
+        f"captured_responses: {result.get('captured_responses', 0)}",
+        f"valid_slave_ids: {result.get('valid_slave_ids', [])}",
+    ]
+    for key in ("port", "baudrate", "parity", "stopbits", "bytesize", "captured_at"):
+        if key in result:
+            lines.append(f"{key}: {result[key]}")
+    for response in result.get("responses", []):
+        lines.extend(
+            [
+                "",
+                f"[slave {response.get('slave_id')}]",
+                f"function: {response.get('function')} {response.get('function_name')}",
+            ]
+        )
+        for key in ("byte_count", "value", "raw_hex", "registers", "data_hex", "crc"):
+            if key in response:
+                lines.append(f"{key}: {response[key]}")
     return "\n".join(lines)
 
 
@@ -256,6 +292,35 @@ def _first_response_frame(data: bytes) -> tuple[dict[str, Any] | None, str]:
     return None, last_error
 
 
+def _drain_response_frames(buffer: bytearray) -> tuple[dict[int, dict[str, Any]], str]:
+    responses: dict[int, dict[str, Any]] = {}
+    last_error = ""
+    while buffer:
+        frame, start, end, error = _first_response_frame_span(bytes(buffer))
+        last_error = error or last_error
+        if frame is None or start is None or end is None:
+            if len(buffer) > 512:
+                del buffer[:-512]
+            return responses, last_error
+        responses[int(frame["slave_id"])] = _with_response_value(frame)
+        del buffer[:end]
+    return responses, last_error
+
+
+def _first_response_frame_span(data: bytes) -> tuple[dict[str, Any] | None, int | None, int | None, str]:
+    last_error = ""
+    for start in range(len(data)):
+        for end in range(start + 4, len(data) + 1):
+            try:
+                frame = parse_rtu_frame(data[start:end])
+            except ValueError as exc:
+                last_error = str(exc)
+                continue
+            if _is_read_response(frame):
+                return frame, start, end, ""
+    return None, None, None, last_error
+
+
 def _is_read_response(frame: dict[str, Any]) -> bool:
     return frame.get("function") in READ_FUNCTIONS and "byte_count" in frame
 
@@ -270,6 +335,27 @@ def _with_response_value(frame: dict[str, Any]) -> dict[str, Any]:
 def _with_probe_metadata(result: dict[str, Any], connection: dict[str, Any]) -> dict[str, Any]:
     enriched = {
         **result,
+        **_connection_metadata(connection),
+    }
+    enriched["message"] = format_probe_result(enriched)
+    return enriched
+
+
+def _responses_probe_result(connection: dict[str, Any], responses_by_slave: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    responses = [responses_by_slave[slave_id] for slave_id in sorted(responses_by_slave)]
+    result = {
+        "status": "ok",
+        **_connection_metadata(connection),
+        "captured_responses": len(responses),
+        "valid_slave_ids": [response["slave_id"] for response in responses],
+        "responses": responses,
+    }
+    result["message"] = format_responses_probe_result(result)
+    return result
+
+
+def _connection_metadata(connection: dict[str, Any]) -> dict[str, Any]:
+    return {
         "port": connection.get("port", "COM1"),
         "baudrate": int(connection.get("baudrate", 9600)),
         "parity": connection.get("parity", "N"),
@@ -277,5 +363,3 @@ def _with_probe_metadata(result: dict[str, Any], connection: dict[str, Any]) -> 
         "bytesize": int(connection.get("bytesize", 8)),
         "captured_at": datetime.now(timezone.utc).isoformat(),
     }
-    enriched["message"] = format_probe_result(enriched)
-    return enriched

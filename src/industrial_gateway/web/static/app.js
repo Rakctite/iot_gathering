@@ -208,8 +208,8 @@ function renderDeviceForm(device) {
     <label class="checkbox-row"><input name="enabled" type="checkbox" ${data.enabled ? "checked" : ""}> Enabled</label>
     <label>Poll ms <input name="poll_interval_ms" type="number" min="100" value="${data.poll_interval_ms || 1000}"></label>
     <div id="connectionFields">${fields.map(field => renderField(field, data.connection, "connection_")).join("")}</div>
-    ${monitorProbe ? `<button id="probeModbusRtuMonitor" type="button">Read first response</button>
-    <label>First response result <textarea name="connection_probe_result" readonly rows="8">${escapeHtml(data.connection?.probe_result || "")}</textarea></label>` : ""}
+    ${monitorProbe ? `<button id="probeModbusRtuMonitor" type="button">Read responses</button>
+    <label>Response list result <textarea name="connection_probe_result" readonly rows="10">${escapeHtml(data.connection?.probe_result || "")}</textarea></label>` : ""}
     <button type="submit">Save device</button>
     ${data.id ? `<button id="deleteDevice" type="button">Delete device</button>` : ""}
   `;
@@ -229,7 +229,7 @@ function renderDeviceForm(device) {
 
 async function probeModbusRtuMonitor(form, fields) {
   const output = form.elements.connection_probe_result;
-  output.value = "waiting for first valid Modbus RTU response...";
+  output.value = "capturing valid Modbus RTU responses...";
   try {
     const result = await api("/api/devices/modbus-rtu-monitor/probe", {
       method: "POST",

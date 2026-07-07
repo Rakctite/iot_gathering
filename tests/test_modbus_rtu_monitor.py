@@ -6,6 +6,7 @@ from industrial_gateway.drivers.modbus_rtu_monitor import (
     format_probe_result,
     parse_rtu_frame,
     probe_first_frame,
+    probe_responses,
     timeout_probe_result,
 )
 
@@ -111,10 +112,11 @@ def test_probe_first_frame_reads_first_response_without_writing():
         def close(self):
             pass
 
+    ticks = iter([0, 0, 0, 2])
     result = probe_first_frame(
         {"port": "COM3", "baudrate": 9600, "parity": "N", "stopbits": 1, "bytesize": 8, "capture_wait_s": 1},
         serial_factory=FakeSerial,
-        monotonic=lambda: 0,
+        monotonic=lambda: next(ticks),
     )
 
     assert result["status"] == "ok"
@@ -122,6 +124,44 @@ def test_probe_first_frame_reads_first_response_without_writing():
     assert result["registers"] == [10943]
     assert result["value"] == 10943
     assert result["port"] == "COM3"
+    assert FakeSerial.writes == []
+
+
+def test_probe_responses_lists_valid_slaves_and_latest_values():
+    class FakeSerial:
+        writes = []
+
+        def __init__(self, *args, **kwargs):
+            self.chunks = [
+                bytes.fromhex("01 03 10 03 00 01 70 CA"),
+                bytes.fromhex("01 03 02 2A BF E6 94"),
+                bytes.fromhex("02 03 10 03 00 01 70 F9"),
+                bytes.fromhex("02 03 02 2A F5 23 63"),
+            ]
+
+        def read(self, size=1):
+            return self.chunks.pop(0) if self.chunks else b""
+
+        def write(self, data):
+            self.writes.append(data)
+            return len(data)
+
+        def close(self):
+            pass
+
+    ticks = iter([0, 0, 0, 0, 0, 2])
+    result = probe_responses(
+        {"port": "COM3", "baudrate": 9600, "parity": "E", "stopbits": 1, "bytesize": 8, "capture_wait_s": 1},
+        serial_factory=FakeSerial,
+        monotonic=lambda: next(ticks),
+    )
+
+    assert result["status"] == "ok"
+    assert result["valid_slave_ids"] == [1, 2]
+    assert [response["slave_id"] for response in result["responses"]] == [1, 2]
+    assert [response["value"] for response in result["responses"]] == [10943, 10997]
+    assert "valid_slave_ids: [1, 2]" in result["message"]
+    assert "[slave 2]" in result["message"]
     assert FakeSerial.writes == []
 
 
