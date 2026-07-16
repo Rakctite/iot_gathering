@@ -113,6 +113,20 @@ class EventuallyConnectedSubscriptionDriver(FailingSubscriptionDriver):
         time.sleep(0.01)
 
 
+class HealthCheckDisconnectDriver(FailingSubscriptionDriver):
+    instances = []
+
+    def __init__(self, device, tags):
+        super().__init__(device, tags)
+        HealthCheckDisconnectDriver.instances.append(self)
+
+    def run_subscription_once(self, timeout=0.2):
+        time.sleep(0.01)
+
+    def read_server_status(self):
+        raise ConnectionError("client is disconnected")
+
+
 def test_subscription_worker_can_skip_datachange_log_payloads():
     outbox = Queue()
     logs = Queue()
@@ -142,6 +156,41 @@ def test_subscription_worker_can_skip_datachange_log_payloads():
 
     assert outbox.get_nowait() is result
     assert logs.empty()
+
+
+def test_subscription_worker_reconnects_after_health_check_detects_disconnect():
+    HealthCheckDisconnectDriver.instances = []
+    outbox = Queue()
+    status = Queue()
+    device = DeviceSpec(
+        id=1,
+        name="opc",
+        driver_type="opcua",
+        enabled=True,
+        poll_interval_ms=1000,
+        connection={"mode": "subscription"},
+    )
+    worker = OpcUaSubscriptionWorker(
+        HealthCheckDisconnectDriver,
+        device,
+        [],
+        outbox,
+        status_outbox=status,
+        health_interval_s=0,
+        retry_interval_s=0,
+    )
+
+    worker.start()
+    deadline = time.monotonic() + 1
+    while len(HealthCheckDisconnectDriver.instances) < 2 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    worker.stop()
+    worker.join(timeout=1)
+
+    assert len(HealthCheckDisconnectDriver.instances) >= 2
+    assert HealthCheckDisconnectDriver.instances[0].stopped is True
+    assert HealthCheckDisconnectDriver.instances[0].disconnected is True
+    assert status.get_nowait()["status"] == "ERROR"
 
 
 def test_driver_poller_puts_read_result_on_queue():

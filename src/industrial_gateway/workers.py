@@ -299,6 +299,7 @@ class OpcUaSubscriptionWorker(threading.Thread):
                 "server health check failed",
                 {"device": self.device.name, **_exception_data(exc)},
             )
+            raise
 
 
 class SinkPublisher(threading.Thread):

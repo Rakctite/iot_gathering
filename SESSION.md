@@ -138,4 +138,6 @@
 - Built and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.8-amd` from `Dockerfile.db-amd64` with `IOT_GATHERING_VERSION=1.0.8`.
 - AMD registry digest from docker push output: `sha256:2127136143ce00ff3609b8bbae07c9a29f0d2e48aae61c4fe141c6c3a6e28def`.
 - Built and pushed ARM core image `203.228.107.184:5000/btx/iot_gathering:1.0.8-arm` from `Dockerfile` with `IOT_GATHERING_VERSION=1.0.8`; ARM image has no PostgreSQL plugin profile.
+- Fixed OPC UA subscription recovery so a failed server health check exits the stale subscription and enters the existing cleanup/retry/reconnect flow.
+- Released and pushed AMD PostgreSQL-enabled image `203.228.107.184:5000/btx/iot_gathering:1.0.9-amd` with digest `sha256:c209e7b241e00eddcdd3addf944bd5df48b9fa215fd0cb011db81b5f2c30d2a6`.
 - ARM registry digest from docker push output: `sha256:8f46333fc47de5c46c262949bd4d3f480f4283b2b597e16373fdf1ed41815c91`.
